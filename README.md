@@ -16,7 +16,7 @@ OCEANS_INK_GRESOURCE=build/oceans-ink.gresource ./build/oceans-ink
 ```sh
 cargo vendor build-aux/vendor > /dev/null
 flatpak-builder --user --force-clean --install --state-dir=.flatpak-builder \
-  flatpak-build packaging/net.hardscrabble.oceans-ink.json
+  flatpak-build build-aux/net.hardscrabble.oceans-ink.json
 flatpak run net.hardscrabble.oceans-ink
 ```
 
@@ -36,4 +36,4 @@ whenever `Cargo.toml` or `Cargo.lock` changes.
   (`libsecret` crate)
 - `src/resources/` — GResource XML and UI templates
 - `data/` — desktop file, appstream metainfo, icon
-- `packaging/` — Flatpak manifest
+- `build-aux/` — Flatpak manifest (detected by Builder) and cargo.sh
