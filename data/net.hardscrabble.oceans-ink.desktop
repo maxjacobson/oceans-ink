@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Oceans Ink
+Comment=Unofficial Instapaper client for GNOME
+Exec=oceans-ink
+Icon=net.hardscrabble.oceans-ink
+Terminal=false
+Categories=Network;GNOME;GTK;
+Keywords=Instapaper;Read Later;Articles;
+StartupNotify=true

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="OceansInkWindow" parent="AdwApplicationWindow">
+    <property name="default-width">900</property>
+    <property name="default-height">600</property>
+    <property name="title">Oceans Ink</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar"/>
+        </child>
+        <property name="content">
+          <object class="GtkStack" id="stack">
+            <child>
+              <object class="GtkStackPage">
+                <property name="name">token</property>
+                <property name="child">
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <property name="halign">center</property>
+                    <property name="valign">center</property>
+                    <property name="spacing">18</property>
+                    <child>
+                      <object class="AdwPreferencesGroup">
+                        <property name="title">Instapaper access token</property>
+                        <property name="description">Create one on the Applications page at instapaper.com</property>
+                        <child>
+                          <object class="AdwPasswordEntryRow" id="token_entry">
+                            <property name="title">Access token</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="save_button">
+                        <property name="label">Save</property>
+                        <property name="halign">center</property>
+                        <property name="css-classes">suggested-action</property>
+                      </object>
+                    </child>
+                  </object>
+                </property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkStackPage">
+                <property name="name">ready</property>
+                <property name="child">
+                  <object class="AdwStatusPage">
+                    <property name="title">Token saved</property>
+                    <property name="description">Your Instapaper access token is stored in the system keyring. Article lists are coming next.</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

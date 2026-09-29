@@ -1,0 +1,45 @@
+{
+  "id": "net.hardscrabble.oceans-ink",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "50",
+  "sdk": "org.gnome.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
+  "command": "oceans-ink",
+  "finish-args": [
+    "--device=dri",
+    "--share=ipc",
+    "--share=network",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--filesystem=xdg-run/keyring"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin",
+    "env": {
+      "RUSTFLAGS": "-L /usr/lib/sdk/rust-stable/lib"
+    }
+  },
+  "modules": [
+    {
+      "name": "oceans-ink",
+      "buildsystem": "meson",
+      "builddir": true,
+      "sources": [
+        {
+          "type": "dir",
+          "path": "..",
+          "skip": [
+            ".jj",
+            "build",
+            "flatpak-build",
+            ".flatpak-builder",
+            "target",
+            ".github"
+          ]
+        }
+      ]
+    }
+  ]
+}

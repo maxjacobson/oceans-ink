@@ -1,0 +1,52 @@
+mod secret;
+mod window;
+
+use adw::prelude::*;
+use gtk::gio;
+use gtk::glib;
+
+const APP_ID: &str = "net.hardscrabble.oceans-ink";
+
+fn register_resources() {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Some(path) = std::env::var_os("OCEANS_INK_GRESOURCE") {
+        candidates.push(std::path::PathBuf::from(path));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("../../share/oceans-ink/oceans-ink.gresource"));
+            candidates.push(dir.join("../share/oceans-ink/oceans-ink.gresource"));
+            candidates.push(dir.join("share/oceans-ink/oceans-ink.gresource"));
+        }
+    }
+
+    candidates.push("/app/share/oceans-ink/oceans-ink.gresource".into());
+    candidates.push("/usr/share/oceans-ink/oceans-ink.gresource".into());
+
+    for path in &candidates {
+        if let Ok(resource) = gio::Resource::load(path) {
+            gio::resources_register(&resource);
+            return;
+        }
+    }
+
+    panic!(
+        "Could not load UI resources. Tried: {:?}. \
+         When building with meson, set OCEANS_INK_GRESOURCE to the built oceans-ink.gresource.",
+        candidates
+    );
+}
+
+fn main() -> glib::ExitCode {
+    let app = adw::Application::builder().application_id(APP_ID).build();
+
+    app.connect_startup(|_| register_resources());
+
+    app.connect_activate(|app| {
+        window::Window::new(app).present();
+    });
+
+    app.run()
+}

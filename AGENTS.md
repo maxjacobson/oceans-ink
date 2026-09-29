@@ -1,17 +1,35 @@
-I'm interested in building a Flatpak GNOME gtk Instapaper GUI app.
+I'm building Oceans Ink, a Flatpak GNOME gtk Instapaper GUI app in Rust.
 
-I am running on Fedora Linux with GNOME 50.
+I run Fedora Linux with GNOME 50. I have the Builder IDE. I am not an expert
+at any of this stuff.
 
-I have the Builder IDE I can use.
-
-I am not an expert at any of this stuff.
-
-FYI they just announced v2 so make sure to avoid assumptions about the API.
-
+Instapaper API v2 (beware: announced 2026-09-29, don't assume v1 API):
 - Announcement: https://blog.instapaper.com/2026/09/29/instapaper-api-v2/
 - OpenAPI spec: https://www.instapaper.com/api/2/openapi.json
+- Base URL: https://www.instapaper.com/api/2, OAuth 2 bearer token auth
+- Lists: GET /bookmarks?section=home|liked|archive (limit/offset pagination,
+  max 500)
+- Archive/unarchive: POST /bookmarks/{id}/move with {"section": "archive"|"home"}
+- Delete: DELETE /bookmarks/{id} (permanent, confirm first)
+- Like/unlike: POST/DELETE /bookmarks/{id}/like
 
-Let's plan to write Rust lang.
+## Decisions so far
+
+- App ID: net.hardscrabble.oceans-ink (display name "Oceans Ink")
+- Stack: Rust, gtk4-rs (gtk4 0.10), libadwaita 0.8, meson, Flatpak
+  (org.gnome.Platform//50 + rust-stable//25.08 extension)
+- Access token: user pastes a personal access token; stored in the system
+  keyring via the `keyring` crate with zbus (pure Rust, chosen over
+  libsecret because the host lacked libsecret-devel headers). Schema:
+  service "net.hardscrabble.oceans-ink", account "instapaper-access-token"
+- Flatpak cargo deps are vendored to gitignored build-aux/vendor; see
+  README for the regenerate command
+- OAuth flow for other users: punted for now
+
+## Build
+
+See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
+./build/oceans-ink`
 
 ## jj workflow
 
@@ -19,17 +37,9 @@ Let's plan to write Rust lang.
   with accurate, succinct descriptions.
 - Never commit credentials.
 
-Feel free to rewrite this file as you build this out and make decisions.
-
-## Credentials
-
-I've registered an app, and I have a personal access token we can use during development.
-
-I guess for other users we'll need to do an oauth flow or something? We can punt on that for now.
-
 ## Features
 
-- prompt for access token and store it somewhere
+- prompt for access token and store it somewhere (done)
 - Home lists unarchived articles
     - click to open the article in the default browser
     - right click to open a menu and archive, delete, or like
