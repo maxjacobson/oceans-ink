@@ -33,7 +33,7 @@ whenever `Cargo.toml` or `Cargo.lock` changes.
 - `src/main.rs` — app entry, resource loading
 - `src/window.rs` — main window (GTK composite template)
 - `src/secret.rs` — access token storage via the system keyring
-  (`keyring` crate, zbus/Secret Service)
+  (`libsecret` crate)
 - `src/resources/` — GResource XML and UI templates
 - `data/` — desktop file, appstream metainfo, icon
 - `packaging/` — Flatpak manifest

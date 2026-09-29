@@ -7,4 +7,6 @@ description = "Unofficial Instapaper client for GNOME"
 [dependencies]
 gtk = { package = "gtk4", version = "0.10", features = ["v4_18"] }
 adw = { package = "libadwaita", version = "0.8", features = ["v1_8"] }
-keyring = { version = "3", features = ["async-secret-service", "async-io", "crypto-rust"] }
+libsecret = "0.9"
+gio = "0.22"
+glib = "0.22"

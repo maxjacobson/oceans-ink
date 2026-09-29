@@ -19,9 +19,10 @@ Instapaper API v2 (beware: announced 2026-09-29, don't assume v1 API):
 - Stack: Rust, gtk4-rs (gtk4 0.10), libadwaita 0.8, meson, Flatpak
   (org.gnome.Platform//50 + rust-stable//25.08 extension)
 - Access token: user pastes a personal access token; stored in the system
-  keyring via the `keyring` crate with zbus (pure Rust, chosen over
-  libsecret because the host lacked libsecret-devel headers). Schema:
-  service "net.hardscrabble.oceans-ink", account "instapaper-access-token"
+  keyring via the `libsecret` crate (blocking API, called off the main
+  thread). Schema "net.hardscrabble.oceans-ink" with attribute
+  app="oceans-ink". Note: libsecret 0.9 is built on glib/gio 0.22 while
+  gtk4 0.10 uses 0.21, so secret.rs uses its own gio/glib 0.22 deps
 - Flatpak cargo deps are vendored to gitignored build-aux/vendor; see
   README for the regenerate command
 - OAuth flow for other users: punted for now
