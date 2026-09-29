@@ -36,6 +36,8 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
 
 - Run `jj new` and `jj desc` as you go, one change per logical unit of work,
   with accurate, succinct descriptions.
+- Run `just check` (fmt-check + clippy + tests) before finishing each change
+  and keep it green.
 - Never commit credentials.
 
 ## Features

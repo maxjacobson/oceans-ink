@@ -1,3 +1,4 @@
+mod instapaper;
 mod secret;
 mod window;
 
@@ -14,12 +15,13 @@ fn register_resources() {
         candidates.push(std::path::PathBuf::from(path));
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("../../share/oceans-ink/oceans-ink.gresource"));
-            candidates.push(dir.join("../share/oceans-ink/oceans-ink.gresource"));
-            candidates.push(dir.join("share/oceans-ink/oceans-ink.gresource"));
-        }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        candidates.push(dir.join("../../share/oceans-ink/oceans-ink.gresource"));
+        candidates.push(dir.join("../share/oceans-ink/oceans-ink.gresource"));
+        candidates.push(dir.join("share/oceans-ink/oceans-ink.gresource"));
     }
 
     candidates.push("/app/share/oceans-ink/oceans-ink.gresource".into());
