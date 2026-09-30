@@ -1292,7 +1292,7 @@ impl Window {
             .build();
 
         let external_button = gtk::Button::builder()
-            .label("Open in Browser")
+            .label("Watch video")
             .css_classes(["suggested-action", "pill"])
             .halign(gtk::Align::Center)
             .margin_bottom(24)
@@ -1328,12 +1328,6 @@ impl Window {
             .xalign(0.0)
             .visible(false)
             .build();
-        let external_note = gtk::Label::builder()
-            .label("This is a video")
-            .css_classes(["dim-label"])
-            .xalign(0.0)
-            .wrap(true)
-            .build();
         let thumb_button = gtk::Button::builder()
             .child(&external_thumb)
             .css_classes(["flat"])
@@ -1364,7 +1358,6 @@ impl Window {
         external.append(&external_heading);
         external.append(&external_date);
         external.append(&thumb_button);
-        external.append(&external_note);
         external.append(&external_button);
 
         let stack = gtk::Stack::builder()
