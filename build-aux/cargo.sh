@@ -18,4 +18,4 @@ else
   cargo build --release --manifest-path "$src/Cargo.toml"
 fi
 
-cp "$CARGO_TARGET_DIR/release/oceans-ink" "$out"
+cp "$CARGO_TARGET_DIR/release/oceans-ink" "$out.tmp" && mv "$out.tmp" "$out"

@@ -5,6 +5,7 @@ build:
     meson compile -C build
 
 run:
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u)/bus}"
     OCEANS_INK_GRESOURCE=build/oceans-ink.gresource ./build/oceans-ink
 
 fmt:
