@@ -1171,7 +1171,14 @@ impl Window {
             })
             .unwrap_or_else(|| "Untitled".to_string());
         let escaped_title = glib::markup_escape_text(&title);
-        let html = format!("<h1 class=\"oi-article-title\">{escaped_title}</h1>{body}");
+        let added = imp
+            .reader_current
+            .borrow()
+            .as_ref()
+            .and_then(|(_, _, bookmark)| bookmark.added_date())
+            .map(|date| format!("<div class=\"oi-article-date\">Added {date}</div>"))
+            .unwrap_or_default();
+        let html = format!("<h1 class=\"oi-article-title\">{escaped_title}</h1>{added}{body}");
         *imp.webview_base_uri.borrow_mut() = base_uri.clone();
         let webview = self.webview();
         webview.load_html(&html, base_uri.as_deref());
@@ -1205,7 +1212,7 @@ impl Window {
             .vexpand(true)
             .build();
         let stylesheet = webkit6::UserStyleSheet::new(
-            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; }",
+            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; } .oi-article-date { color: #6b6b6b; margin: 0 0 1.5rem; font-size: 0.95rem; }",
             webkit6::UserContentInjectedFrames::AllFrames,
             webkit6::UserStyleLevel::User,
             &[] as &[&str],
@@ -1837,9 +1844,17 @@ impl SectionView {
 
         let bookmarks = self.bookmarks.borrow();
         for bookmark in bookmarks.iter() {
+            let mut parts: Vec<String> = Vec::new();
+            let host = host_of(bookmark.url.as_deref());
+            if !host.is_empty() {
+                parts.push(host);
+            }
+            if let Some(date) = bookmark.added_date() {
+                parts.push(format!("Added {date}"));
+            }
             let row = adw::ActionRow::builder()
                 .title(glib::markup_escape_text(&bookmark.display_title()))
-                .subtitle(host_of(bookmark.url.as_deref()))
+                .subtitle(parts.join(" · "))
                 .activatable(true)
                 .build();
             let thumbnail = gtk::Image::builder()

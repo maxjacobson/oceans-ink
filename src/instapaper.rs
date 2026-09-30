@@ -30,6 +30,8 @@ pub struct Bookmark {
     pub description: Option<String>,
     pub liked: bool,
     pub archived: bool,
+    #[serde(default)]
+    pub time: Option<i64>,
 }
 
 impl Bookmark {
@@ -43,6 +45,11 @@ impl Bookmark {
             .filter(|t| !t.is_empty())
             .or_else(|| self.url.clone())
             .unwrap_or_else(|| "Untitled".to_string())
+    }
+
+    pub fn added_date(&self) -> Option<String> {
+        let date = glib::DateTime::from_unix_local(self.time?).ok()?;
+        date.format("%B %-d, %Y").ok().map(|text| text.to_string())
     }
 }
 
@@ -340,6 +347,7 @@ mod tests {
             description: None,
             liked: false,
             archived: false,
+            time: Some(1700000000),
         };
         assert_eq!(
             bookmark.reader_url(),
@@ -386,6 +394,39 @@ mod tests {
         assert_eq!(article.metadata.title, None);
         assert_eq!(article.content.body, None);
         assert!(article.content.paywalled);
+    }
+
+    #[test]
+    fn added_date_formats_month_day_year() {
+        let bookmark = Bookmark {
+            id: 1,
+            image: None,
+            url: None,
+            title: None,
+            description: None,
+            liked: false,
+            archived: false,
+            time: Some(1700000000),
+        };
+        let text = bookmark.added_date().expect("should format");
+        let parts: Vec<&str> = text.split(' ').collect();
+        assert_eq!(parts.len(), 3, "expected 'Month D, YYYY', got {text}");
+        assert!(
+            parts[0].starts_with(char::is_uppercase),
+            "expected a month name, got {text}"
+        );
+        let day = parts[1].trim_end_matches(',');
+        assert!(
+            day.parse::<u32>().is_ok() && !day.starts_with('0'),
+            "expected an unpadded day, got {text}"
+        );
+        assert_eq!(parts[2].len(), 4, "expected a year, got {text}");
+
+        let bookmark = Bookmark {
+            time: None,
+            ..bookmark
+        };
+        assert_eq!(bookmark.added_date(), None);
     }
 
     #[test]
