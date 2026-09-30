@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 const BASE_URL: &str = "https://www.instapaper.com/api/2";
-pub const BOOKMARKS_LIMIT: u32 = 100;
+pub const BOOKMARKS_LIMIT: u32 = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
@@ -438,15 +438,17 @@ mod tests {
 
     #[test]
     fn page_math() {
+        let limit = u64::from(BOOKMARKS_LIMIT);
         assert_eq!(page_count(0), 1);
         assert_eq!(page_count(1), 1);
-        assert_eq!(page_count(100), 1);
-        assert_eq!(page_count(101), 2);
-        assert_eq!(page_count(250), 3);
+        assert_eq!(page_count(limit), 1);
+        assert_eq!(page_count(limit + 1), 2);
+        assert_eq!(page_count(10 * limit - 1), 10);
+        assert_eq!(page_count(10 * limit), 10);
 
         assert_eq!(offset_for_page(0), 0);
-        assert_eq!(offset_for_page(1), 100);
-        assert_eq!(offset_for_page(3), 300);
+        assert_eq!(offset_for_page(1), BOOKMARKS_LIMIT);
+        assert_eq!(offset_for_page(3), 3 * BOOKMARKS_LIMIT);
     }
 
     #[test]
