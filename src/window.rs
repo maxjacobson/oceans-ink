@@ -21,6 +21,12 @@ mod imp {
         #[template_child]
         pub sections_list: TemplateChild<gtk::ListBox>,
         #[template_child]
+        pub count_home: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub count_liked: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub count_archive: TemplateChild<gtk::Label>,
+        #[template_child]
         pub lists_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub content_title: TemplateChild<adw::WindowTitle>,
@@ -45,6 +51,9 @@ mod imp {
                 token_entry: TemplateChild::default(),
                 save_button: TemplateChild::default(),
                 sections_list: TemplateChild::default(),
+                count_home: TemplateChild::default(),
+                count_liked: TemplateChild::default(),
+                count_archive: TemplateChild::default(),
                 lists_stack: TemplateChild::default(),
                 content_title: TemplateChild::default(),
                 shortcuts_dialog: TemplateChild::default(),
@@ -185,6 +194,7 @@ impl Window {
     fn init_with_token(&self, token: String) {
         let _ = self.imp().client.set(Arc::new(Client::new(token)));
         self.imp().stack.set_visible_child_name("main");
+        self.refresh_counts();
         if let Some(first) = self.imp().sections_list.row_at_index(0) {
             self.imp().sections_list.select_row(Some(&first));
         }
@@ -244,14 +254,56 @@ impl Window {
         };
         let view = imp.sections.borrow()[index].clone_view();
         view.set_loading();
+        let obj_weak = self.downgrade();
 
         glib::spawn_future_local(async move {
             let result =
                 gtk::gio::spawn_blocking(move || client.bookmarks(section_from_index(index))).await;
-            match result {
-                Ok(Ok(bookmarks)) => view.set_bookmarks(bookmarks),
-                Ok(Err(error)) => view.set_error(&error.to_string()),
-                Err(_) => view.set_error("The request task failed"),
+            if let Some(obj) = obj_weak.upgrade() {
+                match result {
+                    Ok(Ok(page)) => {
+                        view.set_bookmarks(page.bookmarks);
+                        obj.set_count_label(index, page.total);
+                    }
+                    Ok(Err(error)) => view.set_error(&error.to_string()),
+                    Err(_) => view.set_error("The request task failed"),
+                }
+            }
+        });
+    }
+
+    fn set_count_label(&self, index: usize, count: u64) {
+        let label = match index {
+            0 => &self.imp().count_home,
+            1 => &self.imp().count_liked,
+            _ => &self.imp().count_archive,
+        };
+        label.set_text(&format_count(count));
+    }
+
+    fn refresh_counts(&self) {
+        let Some(client) = self.imp().client.get().cloned() else {
+            return;
+        };
+        let obj_weak = self.downgrade();
+        glib::spawn_future_local(async move {
+            let counts = gtk::gio::spawn_blocking(move || {
+                [
+                    (0usize, Section::Home),
+                    (1, Section::Liked),
+                    (2, Section::Archive),
+                ]
+                .into_iter()
+                .map(|(index, section)| (index, client.count(section)))
+                .collect::<Vec<_>>()
+            })
+            .await;
+            if let Some(obj) = obj_weak.upgrade() {
+                for (index, count) in counts.iter().flatten() {
+                    if let Ok(count) = count {
+                        obj.set_count_label(*index, *count);
+                    }
+                }
             }
         });
     }
@@ -454,6 +506,7 @@ impl Window {
             return;
         };
         let view = imp.sections.borrow()[section_index].clone_view();
+        let obj_weak_for_counts = self.downgrade();
 
         glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(move || call(&client)).await;
@@ -461,6 +514,10 @@ impl Window {
                 match mutation {
                     Mutation::RemoveRow => view.remove_row(row_index),
                     Mutation::SetLiked(liked) => view.update_liked(row_index, liked),
+                }
+                let obj_weak = obj_weak_for_counts;
+                if let Some(obj) = obj_weak.upgrade() {
+                    obj.refresh_counts();
                 }
             } else {
                 view.set_error("The change could not be saved. Reload to try again.");
@@ -1355,6 +1412,19 @@ fn menu_item(label: &str, shortcut: Option<&str>) -> gtk::Button {
         .build()
 }
 
+fn format_count(count: u64) -> String {
+    let digits = count.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (position, digit) in digits.chars().enumerate() {
+        let remaining = digits.len() - position;
+        if position > 0 && remaining.is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    grouped
+}
+
 fn is_youtube(url: Option<&str>) -> bool {
     matches!(url, Some(u) if u.contains("youtube.com/") || u.contains("youtu.be/"))
 }
@@ -1373,4 +1443,17 @@ fn host_of(url: Option<&str>) -> String {
         .next()
         .unwrap_or(without_scheme)
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_count;
+
+    #[test]
+    fn groups_thousands_with_commas() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1_000), "1,000");
+        assert_eq!(format_count(12_345_678), "12,345,678");
+    }
 }

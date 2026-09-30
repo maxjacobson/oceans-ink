@@ -87,6 +87,13 @@
                                       <object class="GtkLabel">
                                         <property name="label" translatable="no">Home</property>
                                         <property name="halign">start</property>
+                                        <property name="hexpand">true</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="count_home">
+                                        <property name="halign">end</property>
+                                        <property name="css-classes">dim-label</property>
                                       </object>
                                     </child>
                                   </object>
@@ -111,6 +118,13 @@
                                       <object class="GtkLabel">
                                         <property name="label" translatable="no">Liked</property>
                                         <property name="halign">start</property>
+                                        <property name="hexpand">true</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="count_liked">
+                                        <property name="halign">end</property>
+                                        <property name="css-classes">dim-label</property>
                                       </object>
                                     </child>
                                   </object>
@@ -135,6 +149,13 @@
                                       <object class="GtkLabel">
                                         <property name="label" translatable="no">Archive</property>
                                         <property name="halign">start</property>
+                                        <property name="hexpand">true</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="count_archive">
+                                        <property name="halign">end</property>
+                                        <property name="css-classes">dim-label</property>
                                       </object>
                                     </child>
                                   </object>

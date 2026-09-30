@@ -77,6 +77,14 @@ pub struct ParsedArticle {
 #[derive(Debug, Deserialize)]
 struct BookmarkList {
     bookmarks: Vec<Bookmark>,
+    #[serde(default)]
+    total: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct BookmarkPage {
+    pub bookmarks: Vec<Bookmark>,
+    pub total: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,7 +133,7 @@ impl Client {
         }
     }
 
-    pub fn bookmarks(&self, section: Section) -> Result<Vec<Bookmark>, Error> {
+    pub fn bookmarks(&self, section: Section) -> Result<BookmarkPage, Error> {
         let url = format!("{BASE_URL}/bookmarks");
         let response = self
             .http
@@ -134,7 +142,22 @@ impl Client {
             .bearer_auth(&self.token)
             .send()?;
         let list: BookmarkList = self.check(response)?.json()?;
-        Ok(list.bookmarks)
+        Ok(BookmarkPage {
+            bookmarks: list.bookmarks,
+            total: list.total,
+        })
+    }
+
+    pub fn count(&self, section: Section) -> Result<u64, Error> {
+        let url = format!("{BASE_URL}/bookmarks");
+        let response = self
+            .http
+            .get(url)
+            .query(&[("section", section.query_value()), ("limit", "1")])
+            .bearer_auth(&self.token)
+            .send()?;
+        let list: BookmarkList = self.check(response)?.json()?;
+        Ok(list.total)
     }
 
     pub fn article(&self, id: i64) -> Result<ParsedArticle, Error> {
@@ -241,6 +264,7 @@ mod tests {
 
         let list: BookmarkList = serde_json::from_str(json).expect("should parse");
         assert_eq!(list.bookmarks.len(), 2);
+        assert_eq!(list.total, 2);
 
         let first = &list.bookmarks[0];
         assert_eq!(first.id, 123);
