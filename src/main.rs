@@ -52,6 +52,16 @@ fn main() -> glib::ExitCode {
         }
     });
 
+    let quit = gtk::gio::SimpleAction::new("quit", None);
+    let app_weak = app.downgrade();
+    quit.connect_activate(move |_, _| {
+        if let Some(app) = app_weak.upgrade() {
+            app.quit();
+        }
+    });
+    app.add_action(&quit);
+    app.set_accels_for_action("app.quit", &["<Ctrl>q"]);
+
     app.connect_activate(|app| {
         window::Window::new(app).present();
     });

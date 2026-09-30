@@ -210,6 +210,12 @@
             <property name="action-name">win.keyboard-shortcuts</property>
           </object>
         </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Quit</property>
+            <property name="action-name">app.quit</property>
+          </object>
+        </child>
       </object>
     </child>
   </object>
