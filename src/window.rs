@@ -1190,13 +1190,27 @@ impl Window {
             })
             .unwrap_or_else(|| "Untitled".to_string());
         let escaped_title = glib::markup_escape_text(&title);
+        let byline = article
+            .metadata
+            .author
+            .map(|author| author.name)
+            .filter(|name| !name.is_empty())
+            .map(|name| format!("By {}", glib::markup_escape_text(&name)));
         let added = imp
             .reader_current
             .borrow()
             .as_ref()
             .and_then(|(_, _, bookmark)| bookmark.added_date())
-            .map(|date| format!("<div class=\"oi-article-date\">Added {date}</div>"))
-            .unwrap_or_default();
+            .map(|date| format!("Added {date}"));
+        let meta_parts: Vec<String> = [byline, added].into_iter().flatten().collect();
+        let meta_line = if meta_parts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<div class=\"oi-article-date\">{}</div>",
+                meta_parts.join(" · ")
+            )
+        };
         let url_line = imp
             .reader_current
             .borrow()
@@ -1209,8 +1223,9 @@ impl Window {
                 format!("<div class=\"oi-article-url\"><a href=\"{escaped}\">{escaped}</a></div>")
             })
             .unwrap_or_default();
-        let html =
-            format!("<h1 class=\"oi-article-title\">{escaped_title}</h1>{added}{url_line}{body}");
+        let html = format!(
+            "<h1 class=\"oi-article-title\">{escaped_title}</h1>{meta_line}{url_line}{body}"
+        );
         *imp.webview_base_uri.borrow_mut() = base_uri.clone();
         let webview = self.webview();
         webview.load_html(&html, base_uri.as_deref());
