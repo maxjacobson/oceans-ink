@@ -30,6 +30,11 @@ OCEANS_INK_GRESOURCE=build/oceans-ink.gresource ./build/oceans-ink
 ## Building as a Flatpak
 
 ```sh
+just install
+flatpak run net.hardscrabble.oceans-ink
+```
+
+Which runs:
 cargo vendor build-aux/vendor > /dev/null
 flatpak-builder --user --force-clean --install --state-dir=.flatpak-builder \
   flatpak-build build-aux/net.hardscrabble.oceans-ink.json

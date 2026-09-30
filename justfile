@@ -21,3 +21,7 @@ test:
     cargo test
 
 check: fmt-check lint test
+
+install:
+    flatpak-builder --user --force-clean --install --state-dir=.flatpak-builder \
+        flatpak-build build-aux/net.hardscrabble.oceans-ink.json

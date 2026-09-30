@@ -114,7 +114,8 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
   produced "error decoding response body" errors; possibly rate limiting.
   The decode-error diagnostics above will reveal the actual body if it
   recurs
-- Pagination: list requests fetch limit=500 with no page-following yet
+- Pagination: list requests fetch limit=100 (BOOKMARKS_LIMIT in
+  src/instapaper.rs) with no page-following yet
 - Thumbnail cache eviction is time-based only; could also cap total size
 
 ## Dev workflow notes

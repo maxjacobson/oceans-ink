@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 const BASE_URL: &str = "https://www.instapaper.com/api/2";
+const BOOKMARKS_LIMIT: u32 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
@@ -141,7 +142,10 @@ impl Client {
         let response = self
             .http
             .get(url)
-            .query(&[("section", section.query_value()), ("limit", "500")])
+            .query(&[
+                ("section", section.query_value()),
+                ("limit", BOOKMARKS_LIMIT.to_string().as_str()),
+            ])
             .bearer_auth(&self.token)
             .send()?;
         let list: BookmarkList = Self::decode_json(response)?;
