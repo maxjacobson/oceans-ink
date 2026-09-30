@@ -587,6 +587,7 @@ impl Window {
         glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(move || call(&client)).await;
             if matches!(result, Ok(Ok(()))) {
+                let removed_row = matches!(mutation, Mutation::RemoveRow);
                 match mutation {
                     Mutation::RemoveRow => view.remove_row(row_index),
                     Mutation::SetLiked(liked) => view.update_liked(row_index, liked),
@@ -622,6 +623,9 @@ impl Window {
                                             obj.refresh_counts();
                                             if let Some(liked) = undo.reader_like_state {
                                                 obj.sync_reader_like_after_undo(liked);
+                                            }
+                                            if removed_row {
+                                                obj.pop_reader_if_showing(section_index);
                                             }
                                         }
                                     });
@@ -747,6 +751,22 @@ impl Window {
         self.refresh_reader_like_state(liked);
     }
 
+    fn pop_reader_if_showing(&self, section_index: usize) {
+        if !self.reader_visible() {
+            return;
+        }
+        let showing = self
+            .imp()
+            .reader_current
+            .borrow()
+            .as_ref()
+            .is_some_and(|(reader_section, _, _)| *reader_section == section_index);
+        if showing {
+            self.imp().content_nav.pop();
+            self.imp().sections.borrow()[section_index].restore_scroll();
+        }
+    }
+
     fn refresh_reader_like_state(&self, liked: bool) {
         let reader = self.reader();
         reader.like_icon.set_visible(true);
@@ -820,6 +840,11 @@ impl Window {
             return;
         };
         let id = bookmark.id;
+        let after: Option<AfterMutation> = if self.reader_visible() {
+            Some(advance_reader_after(section_index, row_index))
+        } else {
+            None
+        };
         if section_from_index(section_index) == Section::Archive {
             self.mutate(
                 section_index,
@@ -831,7 +856,7 @@ impl Window {
                         reader_like_state: None,
                         call: Box::new(move |client: &Client| client.archive(id)),
                     }),
-                    after: None,
+                    after,
                 },
                 "Moved to home",
                 move |client: &Client| client.unarchive(id),
@@ -847,15 +872,11 @@ impl Window {
                         reader_like_state: None,
                         call: Box::new(move |client: &Client| client.unarchive(id)),
                     }),
-                    after: None,
+                    after,
                 },
                 "Archived",
                 move |client: &Client| client.archive(id),
             );
-        }
-        if self.reader_visible() {
-            self.imp().content_nav.pop();
-            self.imp().sections.borrow()[section_index].restore_scroll();
         }
     }
 
@@ -1408,6 +1429,23 @@ fn section_from_index(index: usize) -> Section {
         1 => Section::Liked,
         _ => Section::Archive,
     }
+}
+
+fn advance_reader_after(section_index: usize, row_index: usize) -> AfterMutation {
+    Box::new(move |window, success| {
+        let view = window.imp().sections.borrow()[section_index].clone_view();
+        let next = if success {
+            view.bookmark_at(row_index)
+        } else {
+            None
+        };
+        if let Some(next) = next {
+            window.advance_reader(section_index, row_index, &next);
+            return;
+        }
+        window.imp().content_nav.pop();
+        window.imp().sections.borrow()[section_index].restore_scroll();
+    })
 }
 
 pub(crate) struct SectionView {

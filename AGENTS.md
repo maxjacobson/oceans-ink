@@ -87,9 +87,11 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
 - Toasts with Undo buttons for like/unlike/archive/move-to-home
 - Scroll position is anchored to the topmost visible bookmark when
   drilling in, so returning (even after delete/archive) lands in place
-- Deleting from the reader advances to the next bookmark in the list
-  instead of popping back; pops only after deleting the last one
-  (archive/unlike from the reader still pop back to the list)
+- Deleting, archiving, or unarchiving from the reader advances to the next
+  bookmark in the list instead of popping back; pops only when the mutated
+  bookmark was last in the list. Clicking Undo on the archive/move toast
+  while still in the reader pops back to the list (the reload reinserts a
+  row, which would leave reader_current's row index stale)
 - Thumbnail cache: src/thumbnail_cache.rs, files under the app cache dir
   named by URL SHA-256, atomically-written index.json with cached_at
   timestamps, pruned on startup past a 30-day cutoff (constant in the
