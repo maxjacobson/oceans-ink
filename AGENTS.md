@@ -129,6 +129,18 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
   building and make sure only one window is open
 - cargo test for unit tests (API client JSON parsing, thumbnail cache,
   scroll helpers)
+- Lint policy: Cargo.toml's [lints] table denies unsafe_code and the
+  clippy default group, and warns on unwrap_used, panic, print_stdout/
+  print_stderr, todo, and rust_2018_idioms (warnings are errors under
+  `just lint`). Treat a flagged warning as a bug to fix at the cause,
+  not noise to silence: replace unwrap with let-else or real error
+  handling, and route diagnostics through proper logging rather than
+  println. Silence a warning only when the code is genuinely fine, via
+  a targeted #[allow] scoped as tightly as possible (one site or one
+  function, not a whole module) plus a one-line comment saying why it
+  is safe. Test modules may freely unwrap/expect/panic, so they carry
+  a blanket allow at the top. Do not downgrade lint levels in the
+  [lints] table without asking MJ first
 - For visual debugging, MJ can drop a screenshot PNG into the project
   directory (gitignored) for the agent to view
 - GTK gotchas learned: CSS cursor property did nothing (use
