@@ -44,8 +44,9 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
 
 - Run `jj new` and `jj desc` as you go, one change per logical unit of work,
   with accurate, succinct descriptions.
-- Run `just check` (fmt-check + clippy + tests) before finishing each change
-  and keep it green.
+- Edit without running rustfmt as you go (its reflowing breaks edit
+  anchors); format once with `just fmt` right before committing, then run
+  `just check` (fmt-check + clippy + tests) and keep it green.
 - Include a Crush attribution at the end of commit descriptions:
   "💘 Generated with Crush" plus "Assisted-by: Crush:glm-5.3-flash".
 - `jj git push` only pushes bookmarks, so advance `main` to the newest

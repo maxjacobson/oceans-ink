@@ -38,6 +38,7 @@ mod imp {
         pub content_nav: TemplateChild<adw::NavigationView>,
         pub(crate) reader: RefCell<Option<ReaderWidgets>>,
         pub(crate) reader_current: RefCell<Option<(usize, usize, Bookmark)>>,
+        pub thumbnails: std::sync::Arc<crate::thumbnail_cache::ThumbnailCache>,
         pub webview: RefCell<Option<webkit6::WebView>>,
         pub webview_base_uri: RefCell<Option<String>>,
         pub(crate) sections: RefCell<Vec<super::SectionView>>,
@@ -63,6 +64,7 @@ mod imp {
                 content_nav: TemplateChild::default(),
                 reader: RefCell::new(None),
                 reader_current: RefCell::new(None),
+                thumbnails: std::sync::Arc::new(crate::thumbnail_cache::ThumbnailCache::open()),
                 webview: RefCell::new(None),
                 webview_base_uri: RefCell::new(None),
                 sections: RefCell::new(Vec::new()),
@@ -262,6 +264,7 @@ impl Window {
         let view = imp.sections.borrow()[index].clone_view();
         view.set_loading();
         let obj_weak = self.downgrade();
+        let thumbnails = imp.thumbnails.clone();
 
         let list_client = client.clone();
         glib::spawn_future_local(async move {
@@ -271,7 +274,7 @@ impl Window {
             if let Some(obj) = obj_weak.upgrade() {
                 match result {
                     Ok(Ok(page)) => {
-                        view.set_bookmarks(page.bookmarks, (*client).clone());
+                        view.set_bookmarks(page.bookmarks, (*client).clone(), thumbnails.clone());
                         obj.set_count_label(index, page.total);
                     }
                     Ok(Err(error)) => view.set_error(&error.to_string()),
@@ -842,8 +845,11 @@ impl Window {
         *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
 
         if is_youtube(bookmark.url.as_deref()) {
+            reader.external_heading.set_text(&bookmark.display_title());
+            reader.external_thumb.set_visible(false);
             reader.stack.set_visible_child_name("external");
             imp.content_nav.push_by_tag("reader");
+            self.load_reader_thumbnail(bookmark.image.clone());
             return;
         }
 
@@ -866,6 +872,11 @@ impl Window {
                 }
             }
         });
+    }
+
+    fn load_reader_thumbnail(&self, image_url: Option<String>) {
+        let reader = self.reader();
+        load_reader_thumbnail_impl(self, &reader, image_url);
     }
 
     fn show_article(&self, article: crate::instapaper::ParsedArticle, base_uri: Option<String>) {
@@ -987,7 +998,9 @@ impl Window {
             .label("Open in Browser")
             .css_classes(["suggested-action", "pill"])
             .halign(gtk::Align::Center)
+            .margin_bottom(24)
             .build();
+        external_button.set_cursor_from_name(Some("pointer"));
         let external_window = self.downgrade();
         external_button.connect_clicked(move |_| {
             if let Some(obj) = external_window.upgrade() {
@@ -1002,11 +1015,51 @@ impl Window {
                 }
             }
         });
-        let external = adw::StatusPage::builder()
-            .title("This article is a video")
-            .description("Instapaper could not parse it. Watch it in your browser instead.")
-            .child(&external_button)
+        let external_heading = gtk::Label::builder()
+            .wrap(true)
+            .xalign(0.5)
+            .css_classes(["title-2"])
+            .margin_top(16)
             .build();
+        let external_thumb = gtk::Picture::builder()
+            .can_shrink(true)
+            .hexpand(true)
+            .visible(false)
+            .build();
+        let external_note = gtk::Label::builder()
+            .label("This article is a video. Watch it in your browser instead.")
+            .css_classes(["dim-label"])
+            .wrap(true)
+            .build();
+        let thumb_button = gtk::Button::builder()
+            .child(&external_thumb)
+            .css_classes(["flat"])
+            .build();
+        thumb_button.set_cursor_from_name(Some("pointer"));
+        let thumb_window = self.downgrade();
+        thumb_button.connect_clicked(move |_| {
+            if let Some(obj) = thumb_window.upgrade() {
+                let url = obj
+                    .imp()
+                    .reader_current
+                    .borrow()
+                    .clone()
+                    .and_then(|(_, _, bookmark)| bookmark.url);
+                if let Some(url) = url {
+                    obj.open_uri(url);
+                }
+            }
+        });
+
+        let external = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .valign(gtk::Align::Center)
+            .spacing(12)
+            .build();
+        external.append(&external_heading);
+        external.append(&thumb_button);
+        external.append(&external_note);
+        external.append(&external_button);
 
         let stack = gtk::Stack::builder()
             .transition_type(gtk::StackTransitionType::Crossfade)
@@ -1082,6 +1135,7 @@ impl Window {
             .css_classes(["flat"])
             .tooltip_text("Like")
             .build();
+        header_like_button.set_cursor_from_name(Some("pointer"));
         let header_like_window = self.downgrade();
         header_like_button.connect_clicked(move |_| {
             if let Some(obj) = header_like_window.upgrade() {
@@ -1129,6 +1183,8 @@ impl Window {
             error,
             like_button: header_like_button,
             like_icon,
+            external_heading,
+            external_thumb,
             like_label,
             archive_label,
             external_button,
@@ -1393,7 +1449,12 @@ impl SectionView {
         self.stack.set_visible_child_name("error");
     }
 
-    fn set_bookmarks(&self, bookmarks: Vec<Bookmark>, client: crate::instapaper::Client) {
+    fn set_bookmarks(
+        &self,
+        bookmarks: Vec<Bookmark>,
+        client: crate::instapaper::Client,
+        thumbnails: std::sync::Arc<crate::thumbnail_cache::ThumbnailCache>,
+    ) {
         *self.bookmarks.borrow_mut() = bookmarks;
         self.icons.borrow_mut().clear();
 
@@ -1416,19 +1477,29 @@ impl SectionView {
             row.add_prefix(&thumbnail);
             if let Some(image_url) = bookmark.image.clone() {
                 let thumbnail_weak = thumbnail.downgrade();
-                let image_client = client.clone();
                 let image_url = image_url.clone();
-                glib::spawn_future_local(async move {
-                    let bytes =
-                        gtk::gio::spawn_blocking(move || image_client.image_bytes(&image_url))
-                            .await;
-                    if let (Some(thumbnail), Ok(Ok(bytes))) = (thumbnail_weak.upgrade(), bytes) {
-                        let glib_bytes = glib::Bytes::from_owned(bytes);
-                        if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
-                            thumbnail.set_paintable(Some(&texture));
-                        }
+                match thumbnails.get(&image_url) {
+                    Some(bytes) => {
+                        apply_texture(&thumbnail, &bytes);
                     }
-                });
+                    None => {
+                        let thumbnails = thumbnails.clone();
+                        let image_client = client.clone();
+                        let fetch_url = image_url.clone();
+                        glib::spawn_future_local(async move {
+                            let bytes = gtk::gio::spawn_blocking(move || {
+                                image_client.image_bytes(&fetch_url)
+                            })
+                            .await;
+                            if let (Some(thumbnail), Ok(Ok(bytes))) =
+                                (thumbnail_weak.upgrade(), bytes)
+                            {
+                                thumbnails.put(&image_url, &bytes);
+                                apply_texture(&thumbnail, &bytes);
+                            }
+                        });
+                    }
+                }
             }
             let show_heart = bookmark.liked && self.section != Section::Liked;
             let icon = gtk::Image::builder()
@@ -1512,6 +1583,8 @@ pub(crate) struct ReaderWidgets {
     pub error: adw::StatusPage,
     pub like_button: gtk::Button,
     pub like_icon: gtk::Image,
+    pub external_heading: gtk::Label,
+    pub external_thumb: gtk::Picture,
     pub like_label: gtk::Label,
     pub archive_label: gtk::Label,
     pub external_button: gtk::Button,
@@ -1526,6 +1599,8 @@ impl Clone for ReaderWidgets {
             error: self.error.clone(),
             like_button: self.like_button.clone(),
             like_icon: self.like_icon.clone(),
+            external_heading: self.external_heading.clone(),
+            external_thumb: self.external_thumb.clone(),
             like_label: self.like_label.clone(),
             archive_label: self.archive_label.clone(),
             external_button: self.external_button.clone(),
@@ -1562,6 +1637,48 @@ fn format_count(count: u64) -> String {
         grouped.push(digit);
     }
     grouped
+}
+
+fn apply_picture(picture: &gtk::Picture, bytes: &[u8]) {
+    let glib_bytes = glib::Bytes::from_owned(bytes.to_vec());
+    if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
+        picture.set_paintable(Some(&texture));
+    }
+}
+
+fn apply_texture(thumbnail: &gtk::Image, bytes: &[u8]) {
+    let glib_bytes = glib::Bytes::from_owned(bytes.to_vec());
+    if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
+        thumbnail.set_paintable(Some(&texture));
+    }
+}
+
+fn load_reader_thumbnail_impl(window: &Window, reader: &ReaderWidgets, image_url: Option<String>) {
+    let Some(url) = image_url else {
+        return;
+    };
+    match window.imp().thumbnails.get(&url) {
+        Some(bytes) => {
+            reader.external_thumb.set_visible(true);
+            apply_picture(&reader.external_thumb, &bytes);
+        }
+        None => {
+            let Some(client) = window.imp().client.get().cloned() else {
+                return;
+            };
+            let cache = window.imp().thumbnails.clone();
+            let thumb_weak = reader.external_thumb.downgrade();
+            let fetch_url = url.clone();
+            glib::spawn_future_local(async move {
+                let bytes = gtk::gio::spawn_blocking(move || client.image_bytes(&fetch_url)).await;
+                if let (Some(thumb), Ok(Ok(bytes))) = (thumb_weak.upgrade(), bytes) {
+                    cache.put(&url, &bytes);
+                    thumb.set_visible(true);
+                    apply_picture(&thumb, &bytes);
+                }
+            });
+        }
+    }
 }
 
 fn is_youtube(url: Option<&str>) -> bool {

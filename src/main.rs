@@ -1,5 +1,6 @@
 mod instapaper;
 mod secret;
+mod thumbnail_cache;
 mod window;
 
 use adw::prelude::*;
