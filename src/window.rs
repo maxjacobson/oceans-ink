@@ -694,7 +694,11 @@ impl Window {
                 }
                 (Some("b"), false) => {
                     if let Some((_, _, bookmark)) = obj.active_bookmark() {
-                        obj.open_in_browser(&bookmark);
+                        let url = bookmark
+                            .url
+                            .clone()
+                            .unwrap_or_else(|| bookmark.reader_url());
+                        obj.open_uri(url);
                     }
                     glib::Propagation::Stop
                 }
