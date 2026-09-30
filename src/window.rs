@@ -634,9 +634,9 @@ impl SectionView {
 
 fn liked_icon_name(liked: bool) -> &'static str {
     if liked {
-        "starred-symbolic"
+        "oceans-ink-heart-filled-symbolic"
     } else {
-        "non-starred-symbolic"
+        "oceans-ink-heart-outline-symbolic"
     }
 }
 

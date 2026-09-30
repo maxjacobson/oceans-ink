@@ -44,7 +44,13 @@ fn register_resources() {
 fn main() -> glib::ExitCode {
     let app = adw::Application::builder().application_id(APP_ID).build();
 
-    app.connect_startup(|_| register_resources());
+    app.connect_startup(|_| {
+        register_resources();
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::IconTheme::for_display(&display)
+                .add_resource_path("/net/hardscrabble/oceans-ink/icons");
+        }
+    });
 
     app.connect_activate(|app| {
         window::Window::new(app).present();
