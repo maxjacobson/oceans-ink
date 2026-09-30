@@ -1255,6 +1255,9 @@ impl Window {
             if same_page {
                 return false;
             }
+            if !action.is_user_gesture() {
+                return false;
+            }
             decision.ignore();
             let launcher = gtk::UriLauncher::new(&uri);
             glib::spawn_future_local(async move {
