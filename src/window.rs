@@ -415,23 +415,39 @@ impl Window {
     fn setup_key_navigation(&self) {
         let controller = gtk::EventControllerKey::new();
         let obj_weak = self.downgrade();
-        controller.connect_key_pressed(move |_, keyval, _, _| {
+        controller.connect_key_pressed(move |_, keyval, _, modifier| {
             let Some(obj) = obj_weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
             if obj.imp().stack.visible_child_name().as_deref() != Some("main") {
                 return glib::Propagation::Proceed;
             }
-            let delta = match keyval.name().as_deref() {
-                Some("j") => 1,
-                Some("k") => -1,
-                _ => return glib::Propagation::Proceed,
-            };
-            let index = obj.imp().current_section.get();
-            obj.imp().sections.borrow()[index].move_selection(delta);
-            glib::Propagation::Stop
+            let ctrl = modifier.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            match (keyval.name().as_deref(), ctrl) {
+                (Some("j"), false) => {
+                    let index = obj.imp().current_section.get();
+                    obj.imp().sections.borrow()[index].move_selection(1);
+                    glib::Propagation::Stop
+                }
+                (Some("k"), false) => {
+                    let index = obj.imp().current_section.get();
+                    obj.imp().sections.borrow()[index].move_selection(-1);
+                    glib::Propagation::Stop
+                }
+                (Some("1"), true) => obj.switch_to_section(0),
+                (Some("2"), true) => obj.switch_to_section(1),
+                (Some("3"), true) => obj.switch_to_section(2),
+                _ => glib::Propagation::Proceed,
+            }
         });
         self.add_controller(controller);
+    }
+
+    fn switch_to_section(&self, index: usize) -> glib::Propagation {
+        if self.imp().current_section.get() != index {
+            self.select_section(index);
+        }
+        glib::Propagation::Stop
     }
 
     fn show_bookmark_menu(
