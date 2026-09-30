@@ -43,6 +43,37 @@ impl Bookmark {
     }
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ArticleAuthor {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ArticleMetadata {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub author: Option<ArticleAuthor>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ArticleContent {
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub words: Option<i64>,
+    #[serde(default)]
+    pub paywalled: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ParsedArticle {
+    #[serde(default)]
+    pub metadata: ArticleMetadata,
+    #[serde(default)]
+    pub content: ArticleContent,
+}
+
 #[derive(Debug, Deserialize)]
 struct BookmarkList {
     bookmarks: Vec<Bookmark>,
@@ -104,6 +135,13 @@ impl Client {
             .send()?;
         let list: BookmarkList = self.check(response)?.json()?;
         Ok(list.bookmarks)
+    }
+
+    pub fn article(&self, id: i64) -> Result<ParsedArticle, Error> {
+        let url = format!("{BASE_URL}/bookmarks/{id}/parse");
+        let response = self.http.get(url).bearer_auth(&self.token).send()?;
+        let parsed: ParsedArticle = self.check(response)?.json()?;
+        Ok(parsed)
     }
 
     pub fn archive(&self, id: i64) -> Result<(), Error> {
@@ -235,6 +273,47 @@ mod tests {
             bookmark.reader_url(),
             "https://instapaper.com/read/2045166304"
         );
+    }
+
+    #[test]
+    fn parses_parsed_article() {
+        let json = r#"{
+            "metadata": {
+                "title": "An Article",
+                "author": { "name": "A. Writer", "url": "https://example.com/author" },
+                "category": 0
+            },
+            "content": {
+                "body": "<p>Hello <b>world</b></p>",
+                "images": [],
+                "words": 3,
+                "paywalled": false,
+                "direction": "ltr"
+            }
+        }"#;
+
+        let article: ParsedArticle = serde_json::from_str(json).expect("should parse");
+        assert_eq!(article.metadata.title.as_deref(), Some("An Article"));
+        assert_eq!(article.metadata.author.unwrap().name, "A. Writer");
+        assert_eq!(
+            article.content.body.as_deref(),
+            Some("<p>Hello <b>world</b></p>")
+        );
+        assert_eq!(article.content.words, Some(3));
+        assert!(!article.content.paywalled);
+    }
+
+    #[test]
+    fn parses_parsed_article_with_nulls() {
+        let json = r#"{
+            "metadata": { "title": null, "author": null, "category": 0 },
+            "content": { "body": null, "images": [], "words": null, "paywalled": true }
+        }"#;
+
+        let article: ParsedArticle = serde_json::from_str(json).expect("should parse");
+        assert_eq!(article.metadata.title, None);
+        assert_eq!(article.content.body, None);
+        assert!(article.content.paywalled);
     }
 
     #[test]
