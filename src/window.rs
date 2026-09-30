@@ -422,50 +422,62 @@ impl Window {
             "archive-bookmark" => self.mutate(
                 section_index,
                 row_index,
-                Mutation::RemoveRow,
+                MutationPlan {
+                    mutation: Mutation::RemoveRow,
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: None,
+                        call: Box::new(move |client| client.unarchive(bookmark.id)),
+                    }),
+                    after: None,
+                },
                 "Archived",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: None,
-                    call: Box::new(move |client| client.unarchive(bookmark.id)),
-                }),
-                move |client| client.archive(bookmark.id),
+                move |client: &Client| client.archive(bookmark.id),
             ),
             "unarchive-bookmark" => self.mutate(
                 section_index,
                 row_index,
-                Mutation::RemoveRow,
+                MutationPlan {
+                    mutation: Mutation::RemoveRow,
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: None,
+                        call: Box::new(move |client| client.archive(bookmark.id)),
+                    }),
+                    after: None,
+                },
                 "Moved to home",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: None,
-                    call: Box::new(move |client| client.archive(bookmark.id)),
-                }),
-                move |client| client.unarchive(bookmark.id),
+                move |client: &Client| client.unarchive(bookmark.id),
             ),
             "like-bookmark" => self.mutate(
                 section_index,
                 row_index,
-                Mutation::SetLiked(true),
+                MutationPlan {
+                    mutation: Mutation::SetLiked(true),
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: Some(false),
+                        call: Box::new(move |client| client.set_liked(bookmark.id, false)),
+                    }),
+                    after: None,
+                },
                 "Liked",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: Some(false),
-                    call: Box::new(move |client| client.set_liked(bookmark.id, false)),
-                }),
-                move |client| client.set_liked(bookmark.id, true),
+                move |client: &Client| client.set_liked(bookmark.id, true),
             ),
             "unlike-bookmark" => self.mutate(
                 section_index,
                 row_index,
-                Mutation::SetLiked(false),
+                MutationPlan {
+                    mutation: Mutation::SetLiked(false),
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: Some(true),
+                        call: Box::new(move |client| client.set_liked(bookmark.id, true)),
+                    }),
+                    after: None,
+                },
                 "Unliked",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: Some(true),
-                    call: Box::new(move |client| client.set_liked(bookmark.id, true)),
-                }),
-                move |client| client.set_liked(bookmark.id, false),
+                move |client: &Client| client.set_liked(bookmark.id, false),
             ),
             _ => {}
         }
@@ -515,16 +527,33 @@ impl Window {
         let obj_weak = self.downgrade();
         dialog.connect_response(Some("delete"), move |_, _| {
             if let Some(obj) = obj_weak.upgrade() {
-                if return_to_list {
-                    obj.imp().content_nav.pop();
-                    obj.imp().sections.borrow()[section_index].restore_scroll();
-                }
+                let after: Option<AfterMutation> = if return_to_list {
+                    Some(Box::new(move |window, success| {
+                        let view = window.imp().sections.borrow()[section_index].clone_view();
+                        let next = if success {
+                            view.bookmark_at(row_index)
+                        } else {
+                            None
+                        };
+                        if let Some(next) = next {
+                            window.advance_reader(section_index, row_index, &next);
+                            return;
+                        }
+                        window.imp().content_nav.pop();
+                        window.imp().sections.borrow()[section_index].restore_scroll();
+                    }))
+                } else {
+                    None
+                };
                 obj.mutate(
                     section_index,
                     row_index,
-                    Mutation::RemoveRow,
+                    MutationPlan {
+                        mutation: Mutation::RemoveRow,
+                        undo: None,
+                        after,
+                    },
                     "Bookmark deleted",
-                    None,
                     move |client| client.delete(id),
                 );
             }
@@ -537,9 +566,8 @@ impl Window {
         &self,
         section_index: usize,
         row_index: usize,
-        mutation: Mutation,
+        plan: MutationPlan,
         success_toast: &str,
-        undo: Option<UndoSpec>,
         call: impl FnOnce(&Client) -> Result<(), Error> + Send + 'static,
     ) {
         let imp = self.imp();
@@ -550,6 +578,11 @@ impl Window {
         let view = imp.sections.borrow()[section_index].clone_view();
         let obj_weak_for_counts = self.downgrade();
         let success_toast = success_toast.to_string();
+        let MutationPlan {
+            mutation,
+            undo,
+            after,
+        } = plan;
 
         glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(move || call(&client)).await;
@@ -557,6 +590,9 @@ impl Window {
                 match mutation {
                     Mutation::RemoveRow => view.remove_row(row_index),
                     Mutation::SetLiked(liked) => view.update_liked(row_index, liked),
+                }
+                if let (Some(obj), Some(after)) = (obj_weak_for_counts.upgrade(), after) {
+                    after(&obj, true);
                 }
                 if let Some(obj) = obj_weak_for_counts.upgrade() {
                     obj.refresh_counts();
@@ -597,6 +633,9 @@ impl Window {
                     }
                 }
             } else {
+                if let (Some(obj), Some(after)) = (obj_weak_for_counts.upgrade(), after) {
+                    after(&obj, false);
+                }
                 view.set_error("The change could not be saved. Reload to try again.");
             }
         });
@@ -733,13 +772,16 @@ impl Window {
             self.mutate(
                 section_index,
                 row_index,
-                Mutation::RemoveRow,
+                MutationPlan {
+                    mutation: Mutation::RemoveRow,
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: Some(true),
+                        call: Box::new(move |client: &Client| client.set_liked(id, true)),
+                    }),
+                    after: None,
+                },
                 "Unliked",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: Some(true),
-                    call: Box::new(move |client: &Client| client.set_liked(id, true)),
-                }),
                 move |client: &Client| client.set_liked(id, false),
             );
             if in_reader {
@@ -750,13 +792,16 @@ impl Window {
             self.mutate(
                 section_index,
                 row_index,
-                Mutation::SetLiked(liked),
+                MutationPlan {
+                    mutation: Mutation::SetLiked(liked),
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: Some(!liked),
+                        call: Box::new(move |client: &Client| client.set_liked(id, !liked)),
+                    }),
+                    after: None,
+                },
                 if liked { "Liked" } else { "Unliked" },
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: Some(!liked),
-                    call: Box::new(move |client: &Client| client.set_liked(id, !liked)),
-                }),
                 move |client: &Client| client.set_liked(id, liked),
             );
         }
@@ -771,26 +816,32 @@ impl Window {
             self.mutate(
                 section_index,
                 row_index,
-                Mutation::RemoveRow,
+                MutationPlan {
+                    mutation: Mutation::RemoveRow,
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: None,
+                        call: Box::new(move |client: &Client| client.archive(id)),
+                    }),
+                    after: None,
+                },
                 "Moved to home",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: None,
-                    call: Box::new(move |client: &Client| client.archive(id)),
-                }),
                 move |client: &Client| client.unarchive(id),
             );
         } else {
             self.mutate(
                 section_index,
                 row_index,
-                Mutation::RemoveRow,
+                MutationPlan {
+                    mutation: Mutation::RemoveRow,
+                    undo: Some(UndoSpec {
+                        section_index,
+                        reader_like_state: None,
+                        call: Box::new(move |client: &Client| client.unarchive(id)),
+                    }),
+                    after: None,
+                },
                 "Archived",
-                Some(UndoSpec {
-                    section_index,
-                    reader_like_state: None,
-                    call: Box::new(move |client: &Client| client.unarchive(id)),
-                }),
                 move |client: &Client| client.archive(id),
             );
         }
@@ -809,6 +860,21 @@ impl Window {
     }
 
     fn open_reader(&self, section_index: usize, row_index: usize, bookmark: &Bookmark) {
+        self.imp().sections.borrow()[section_index].save_anchor();
+        self.show_in_reader(section_index, row_index, bookmark, true);
+    }
+
+    fn advance_reader(&self, section_index: usize, row_index: usize, bookmark: &Bookmark) {
+        self.show_in_reader(section_index, row_index, bookmark, false);
+    }
+
+    fn show_in_reader(
+        &self,
+        section_index: usize,
+        row_index: usize,
+        bookmark: &Bookmark,
+        push: bool,
+    ) {
         let imp = self.imp();
         let reader = self.reader();
         reader.like_icon.set_visible(true);
@@ -839,20 +905,23 @@ impl Window {
                 "Archive (y)"
             },
         ));
-        imp.sections.borrow()[section_index].save_anchor();
         *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
 
         if is_video(bookmark.url.as_deref()) {
             reader.external_heading.set_text(&bookmark.display_title());
             reader.external_thumb.set_visible(false);
             reader.stack.set_visible_child_name("external");
-            imp.content_nav.push_by_tag("reader");
+            if push {
+                imp.content_nav.push_by_tag("reader");
+            }
             self.load_reader_thumbnail(bookmark.image.clone());
             return;
         }
 
         reader.stack.set_visible_child_name("loading");
-        imp.content_nav.push_by_tag("reader");
+        if push {
+            imp.content_nav.push_by_tag("reader");
+        }
 
         let Some(client) = imp.client.get().cloned() else {
             return;
@@ -1294,6 +1363,14 @@ enum Mutation {
 }
 
 type UndoCall = Box<dyn FnOnce(&Client) -> Result<(), Error> + Send + 'static>;
+
+type AfterMutation = Box<dyn FnOnce(&Window, bool)>;
+
+struct MutationPlan {
+    mutation: Mutation,
+    undo: Option<UndoSpec>,
+    after: Option<AfterMutation>,
+}
 
 struct UndoSpec {
     section_index: usize,
