@@ -60,13 +60,58 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
   brings the changes back.
 - Never commit credentials.
 
-## Features
+## Features (current state)
 
-- prompt for access token and store it somewhere (done)
-- Home lists unarchived articles
-    - click to open the article in the default browser
-    - right click to open a menu and archive, delete, or like
-        - prompt for confirmation before deleting
-    - j/k to move up and down thru the list
-- Liked lists liked articles with same menu items
-- Archive lists archived articles with same menu items
+- Token prompt stored in the keyring (done)
+- Sidebar with Home / Liked / Archive, icons, and dim count badges
+  (fetched with cheap limit=1 probes, refreshed after mutations)
+- Lists show row thumbnails (cached to disk, see below) and red hearts on
+  liked rows (hidden in the Liked list where it is implied)
+- Click a row to drill into the in-app reader; context menu and keyboard
+  shortcuts: j/k move, Enter open, l like/unlike, y archive/unarchive,
+  Backspace delete (confirm dialog), b open in browser,
+  Ctrl+1/2/3 switch sections, Ctrl+? shortcuts, Ctrl+Q quit
+- Toasts with Undo buttons for like/unlike/archive/move-to-home
+- Scroll position is anchored to the topmost visible bookmark when
+  drilling in, so returning (even after delete/archive) lands in place
+- Thumbnail cache: src/thumbnail_cache.rs, files under the app cache dir
+  named by URL SHA-256, atomically-written index.json with cached_at
+  timestamps, pruned on startup past a 30-day cutoff (constant in the
+  module; no pruning scheduler beyond that yet)
+- Reader header buttons: heart, archive (undo-arrow icon in Archive),
+  delete (trash), open-in-browser (custom globe); tooltips include the
+  keyboard shortcuts
+- Error page shows the article title plus the first 300 chars of an
+  unexpected API response body (added to diagnose decode errors)
+
+## Roadmap ideas
+
+- Reading progress: API has progress (percentage + timestamp) on
+  bookmarks and POST /bookmarks/{id} updateBookmark to set it
+- Tags and folders: API has section=folder|tag with folder_id/tag params
+  and /bookmarks/{id}/tags; once in-app, reconsider "Open in browser"
+  pointing at instapaper.com/read/{id} (currently intentional so MJ can
+  manage tags/folders on the website)
+- Request throttling/backoff: a burst of thumbnail + count requests once
+  produced "error decoding response body" errors; possibly rate limiting.
+  The decode-error diagnostics above will reveal the actual body if it
+  recurs
+- Pagination: list requests fetch limit=500 with no page-following yet
+- Thumbnail cache eviction is time-based only; could also cap total size
+
+## Dev workflow notes
+
+- Dev loop: edit, cargo check, then `pkill -x oceans-ink; meson compile
+  -C build; just run` (just run sets the session bus address and
+  OCEANS_INK_GRESOURCE). cargo.sh copies the binary atomically, but a
+  running instance still holds the old one; always relaunch after
+  building and make sure only one window is open
+- cargo test for unit tests (API client JSON parsing, thumbnail cache,
+  scroll helpers)
+- For visual debugging, MJ can drop a screenshot PNG into the project
+  directory (gitignored) for the agent to view
+- GTK gotchas learned: CSS cursor property did nothing (use
+  widget.set_cursor_from_name); symbolic SVGs cannot rely on stroke or
+  fill="none" because GTK's recoloring forces fill (draw outlines with
+  even-odd compound paths); AdwNavigationSplitView's sidebar/content must
+  be AdwNavigationPage (a bare widget renders blank)
