@@ -40,6 +40,9 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
   and keep it green.
 - Include a Crush attribution at the end of commit descriptions:
   "💘 Generated with Crush" plus "Assisted-by: Crush:glm-5.3-flash".
+- `jj git push` only pushes bookmarks, so advance `main` to the newest
+  described change before pushing (e.g. `jj bookmark set main -r @-` after
+  running `jj new`).
 - Never commit credentials.
 
 ## Features
