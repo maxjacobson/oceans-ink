@@ -22,6 +22,8 @@ impl Section {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Bookmark {
     pub id: i64,
+    #[serde(default)]
+    pub image: Option<String>,
     pub url: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
@@ -120,6 +122,7 @@ impl From<reqwest::Error> for Error {
     }
 }
 
+#[derive(Clone)]
 pub struct Client {
     token: String,
     http: reqwest::blocking::Client,
@@ -146,6 +149,13 @@ impl Client {
             bookmarks: list.bookmarks,
             total: list.total,
         })
+    }
+
+    pub fn image_bytes(&self, url: &str) -> Result<Vec<u8>, Error> {
+        let response = self.http.get(url).send()?;
+        let response = self.check(response)?;
+        let bytes = response.bytes()?;
+        Ok(bytes.to_vec())
     }
 
     pub fn count(&self, section: Section) -> Result<u64, Error> {
@@ -237,6 +247,7 @@ mod tests {
                 {
                     "id": 123,
                     "url": "https://example.com/a",
+                    "image": "https://example.com/a/thumb.jpg",
                     "title": "An Article",
                     "description": "first line of text",
                     "progress": { "percentage": 0.5, "timestamp": 1700000000 },
@@ -249,6 +260,7 @@ mod tests {
                 {
                     "id": 456,
                     "url": null,
+                    "image": null,
                     "title": null,
                     "description": null,
                     "progress": { "percentage": 0.0, "timestamp": 1700000001 },
@@ -268,11 +280,16 @@ mod tests {
 
         let first = &list.bookmarks[0];
         assert_eq!(first.id, 123);
+        assert_eq!(
+            first.image.as_deref(),
+            Some("https://example.com/a/thumb.jpg")
+        );
         assert_eq!(first.display_title(), "An Article");
         assert!(first.liked);
         assert!(!first.archived);
 
         let second = &list.bookmarks[1];
+        assert_eq!(second.image, None);
         assert_eq!(second.display_title(), "Untitled");
     }
 
@@ -287,6 +304,7 @@ mod tests {
     fn reader_url_uses_bookmark_id() {
         let bookmark = Bookmark {
             id: 2045166304,
+            image: None,
             url: Some("https://example.com/a".to_string()),
             title: Some("An Article".to_string()),
             description: None,

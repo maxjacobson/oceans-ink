@@ -13,6 +13,8 @@ mod imp {
     #[template(resource = "/net/hardscrabble/oceans-ink/ui/window.ui")]
     pub struct Window {
         #[template_child]
+        pub toast_overlay: TemplateChild<adw::ToastOverlay>,
+        #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub token_entry: TemplateChild<adw::PasswordEntryRow>,
@@ -47,6 +49,7 @@ mod imp {
     impl Default for Window {
         fn default() -> Self {
             Self {
+                toast_overlay: TemplateChild::default(),
                 stack: TemplateChild::default(),
                 token_entry: TemplateChild::default(),
                 save_button: TemplateChild::default(),
@@ -187,6 +190,10 @@ impl Window {
         }
     }
 
+    fn show_toast(&self, message: &str) {
+        self.imp().toast_overlay.add_toast(adw::Toast::new(message));
+    }
+
     fn show_token_page(&self) {
         self.imp().stack.set_visible_child_name("token");
     }
@@ -256,13 +263,15 @@ impl Window {
         view.set_loading();
         let obj_weak = self.downgrade();
 
+        let list_client = client.clone();
         glib::spawn_future_local(async move {
             let result =
-                gtk::gio::spawn_blocking(move || client.bookmarks(section_from_index(index))).await;
+                gtk::gio::spawn_blocking(move || list_client.bookmarks(section_from_index(index)))
+                    .await;
             if let Some(obj) = obj_weak.upgrade() {
                 match result {
                     Ok(Ok(page)) => {
-                        view.set_bookmarks(page.bookmarks);
+                        view.set_bookmarks(page.bookmarks, (*client).clone());
                         obj.set_count_label(index, page.total);
                     }
                     Ok(Err(error)) => view.set_error(&error.to_string()),
@@ -411,24 +420,48 @@ impl Window {
                 section_index,
                 row_index,
                 Mutation::RemoveRow,
+                "Archived",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: None,
+                    call: Box::new(move |client| client.unarchive(bookmark.id)),
+                }),
                 move |client| client.archive(bookmark.id),
             ),
             "unarchive-bookmark" => self.mutate(
                 section_index,
                 row_index,
                 Mutation::RemoveRow,
+                "Moved to home",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: None,
+                    call: Box::new(move |client| client.archive(bookmark.id)),
+                }),
                 move |client| client.unarchive(bookmark.id),
             ),
             "like-bookmark" => self.mutate(
                 section_index,
                 row_index,
                 Mutation::SetLiked(true),
+                "Liked",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: Some(false),
+                    call: Box::new(move |client| client.set_liked(bookmark.id, false)),
+                }),
                 move |client| client.set_liked(bookmark.id, true),
             ),
             "unlike-bookmark" => self.mutate(
                 section_index,
                 row_index,
                 Mutation::SetLiked(false),
+                "Unliked",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: Some(true),
+                    call: Box::new(move |client| client.set_liked(bookmark.id, true)),
+                }),
                 move |client| client.set_liked(bookmark.id, false),
             ),
             _ => {}
@@ -486,6 +519,8 @@ impl Window {
                     section_index,
                     row_index,
                     Mutation::RemoveRow,
+                    "Bookmark deleted",
+                    None,
                     move |client| client.delete(id),
                 );
             }
@@ -499,14 +534,18 @@ impl Window {
         section_index: usize,
         row_index: usize,
         mutation: Mutation,
+        success_toast: &str,
+        undo: Option<UndoSpec>,
         call: impl FnOnce(&Client) -> Result<(), Error> + Send + 'static,
     ) {
         let imp = self.imp();
         let Some(client) = imp.client.get().cloned() else {
             return;
         };
+        let undo_client = client.clone();
         let view = imp.sections.borrow()[section_index].clone_view();
         let obj_weak_for_counts = self.downgrade();
+        let success_toast = success_toast.to_string();
 
         glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(move || call(&client)).await;
@@ -515,9 +554,43 @@ impl Window {
                     Mutation::RemoveRow => view.remove_row(row_index),
                     Mutation::SetLiked(liked) => view.update_liked(row_index, liked),
                 }
-                let obj_weak = obj_weak_for_counts;
-                if let Some(obj) = obj_weak.upgrade() {
+                if let Some(obj) = obj_weak_for_counts.upgrade() {
                     obj.refresh_counts();
+                    match undo {
+                        Some(undo) => {
+                            let toast = adw::Toast::new(&success_toast);
+                            toast.set_button_label(Some("Undo"));
+                            let undo_window = obj_weak_for_counts.clone();
+                            let undo_cell = std::cell::RefCell::new(Some(undo));
+                            let undo_client_cell = std::cell::RefCell::new(Some(undo_client));
+                            toast.connect_button_clicked(move |_| {
+                                let Some(undo) = undo_cell.borrow_mut().take() else {
+                                    return;
+                                };
+                                let Some(undo_client) = undo_client_cell.borrow_mut().take() else {
+                                    return;
+                                };
+                                if let Some(obj) = undo_window.upgrade() {
+                                    let section_index = undo.section_index;
+                                    glib::spawn_future_local(async move {
+                                        let result = gtk::gio::spawn_blocking(move || {
+                                            (undo.call)(&undo_client)
+                                        })
+                                        .await;
+                                        if matches!(result, Ok(Ok(()))) {
+                                            obj.load_section(section_index);
+                                            obj.refresh_counts();
+                                            if let Some(liked) = undo.reader_like_state {
+                                                obj.sync_reader_like_after_undo(liked);
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                            obj.imp().toast_overlay.add_toast(toast);
+                        }
+                        None => obj.show_toast(&success_toast),
+                    }
                 }
             } else {
                 view.set_error("The change could not be saved. Reload to try again.");
@@ -622,6 +695,16 @@ impl Window {
         self.selected_bookmark()
     }
 
+    fn sync_reader_like_after_undo(&self, liked: bool) {
+        if !self.reader_visible() {
+            return;
+        }
+        if let Some((_, _, bookmark)) = self.imp().reader_current.borrow_mut().as_mut() {
+            bookmark.liked = liked;
+        }
+        self.refresh_reader_like_state(liked);
+    }
+
     fn refresh_reader_like_state(&self, liked: bool) {
         let reader = self.reader();
         reader.like_icon.set_visible(true);
@@ -659,7 +742,13 @@ impl Window {
                 section_index,
                 row_index,
                 Mutation::RemoveRow,
-                move |client| client.set_liked(id, false),
+                "Unliked",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: Some(true),
+                    call: Box::new(move |client: &Client| client.set_liked(id, true)),
+                }),
+                move |client: &Client| client.set_liked(id, false),
             );
             if in_reader {
                 self.imp().content_nav.pop();
@@ -669,7 +758,13 @@ impl Window {
                 section_index,
                 row_index,
                 Mutation::SetLiked(liked),
-                move |client| client.set_liked(id, liked),
+                if liked { "Liked" } else { "Unliked" },
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: Some(!liked),
+                    call: Box::new(move |client: &Client| client.set_liked(id, !liked)),
+                }),
+                move |client: &Client| client.set_liked(id, liked),
             );
         }
     }
@@ -684,14 +779,26 @@ impl Window {
                 section_index,
                 row_index,
                 Mutation::RemoveRow,
-                move |client| client.unarchive(id),
+                "Moved to home",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: None,
+                    call: Box::new(move |client: &Client| client.archive(id)),
+                }),
+                move |client: &Client| client.unarchive(id),
             );
         } else {
             self.mutate(
                 section_index,
                 row_index,
                 Mutation::RemoveRow,
-                move |client| client.archive(id),
+                "Archived",
+                Some(UndoSpec {
+                    section_index,
+                    reader_like_state: None,
+                    call: Box::new(move |client: &Client| client.unarchive(id)),
+                }),
+                move |client: &Client| client.archive(id),
             );
         }
         if self.reader_visible() {
@@ -1136,6 +1243,14 @@ enum Mutation {
     SetLiked(bool),
 }
 
+type UndoCall = Box<dyn FnOnce(&Client) -> Result<(), Error> + Send + 'static>;
+
+struct UndoSpec {
+    section_index: usize,
+    reader_like_state: Option<bool>,
+    call: UndoCall,
+}
+
 fn section_from_index(index: usize) -> Section {
     match index {
         0 => Section::Home,
@@ -1278,7 +1393,7 @@ impl SectionView {
         self.stack.set_visible_child_name("error");
     }
 
-    fn set_bookmarks(&self, bookmarks: Vec<Bookmark>) {
+    fn set_bookmarks(&self, bookmarks: Vec<Bookmark>, client: crate::instapaper::Client) {
         *self.bookmarks.borrow_mut() = bookmarks;
         self.icons.borrow_mut().clear();
 
@@ -1291,6 +1406,30 @@ impl SectionView {
                 .subtitle(host_of(bookmark.url.as_deref()))
                 .activatable(true)
                 .build();
+            let thumbnail = gtk::Image::builder()
+                .icon_name("image-x-generic-symbolic")
+                .pixel_size(96)
+                .width_request(96)
+                .height_request(96)
+                .valign(gtk::Align::Center)
+                .build();
+            row.add_prefix(&thumbnail);
+            if let Some(image_url) = bookmark.image.clone() {
+                let thumbnail_weak = thumbnail.downgrade();
+                let image_client = client.clone();
+                let image_url = image_url.clone();
+                glib::spawn_future_local(async move {
+                    let bytes =
+                        gtk::gio::spawn_blocking(move || image_client.image_bytes(&image_url))
+                            .await;
+                    if let (Some(thumbnail), Ok(Ok(bytes))) = (thumbnail_weak.upgrade(), bytes) {
+                        let glib_bytes = glib::Bytes::from_owned(bytes);
+                        if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
+                            thumbnail.set_paintable(Some(&texture));
+                        }
+                    }
+                });
+            }
             let show_heart = bookmark.liked && self.section != Section::Liked;
             let icon = gtk::Image::builder()
                 .icon_name("oceans-ink-heart-filled-symbolic")
