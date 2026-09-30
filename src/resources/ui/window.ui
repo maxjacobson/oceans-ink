@@ -72,13 +72,23 @@
                             <child>
                               <object class="GtkListBoxRow">
                                 <child>
-                                  <object class="GtkLabel">
-                                    <property name="label" translatable="no">Home</property>
-                                    <property name="halign">start</property>
+                                  <object class="GtkBox">
+                                    <property name="spacing">8</property>
                                     <property name="margin-start">8</property>
                                     <property name="margin-end">8</property>
                                     <property name="margin-top">6</property>
                                     <property name="margin-bottom">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <property name="icon-name">user-home-symbolic</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="no">Home</property>
+                                        <property name="halign">start</property>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
                               </object>
@@ -86,13 +96,23 @@
                             <child>
                               <object class="GtkListBoxRow">
                                 <child>
-                                  <object class="GtkLabel">
-                                    <property name="label" translatable="no">Liked</property>
-                                    <property name="halign">start</property>
+                                  <object class="GtkBox">
+                                    <property name="spacing">8</property>
                                     <property name="margin-start">8</property>
                                     <property name="margin-end">8</property>
                                     <property name="margin-top">6</property>
                                     <property name="margin-bottom">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <property name="icon-name">oceans-ink-heart-filled-symbolic</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="no">Liked</property>
+                                        <property name="halign">start</property>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
                               </object>
@@ -100,13 +120,23 @@
                             <child>
                               <object class="GtkListBoxRow">
                                 <child>
-                                  <object class="GtkLabel">
-                                    <property name="label" translatable="no">Archive</property>
-                                    <property name="halign">start</property>
+                                  <object class="GtkBox">
+                                    <property name="spacing">8</property>
                                     <property name="margin-start">8</property>
                                     <property name="margin-end">8</property>
                                     <property name="margin-top">6</property>
                                     <property name="margin-bottom">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <property name="icon-name">oceans-ink-archive-symbolic</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="no">Archive</property>
+                                        <property name="halign">start</property>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
                               </object>
