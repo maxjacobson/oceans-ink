@@ -2,6 +2,18 @@
 <interface>
   <requires lib="gtk" version="4.0"/>
   <requires lib="libadwaita" version="1.0"/>
+  <menu id="primary_menu">
+    <section>
+      <item>
+        <attribute name="label" translatable="no">Keyboard Shortcuts</attribute>
+        <attribute name="action">win.keyboard-shortcuts</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="no">About Oceans Ink</attribute>
+        <attribute name="action">win.about</attribute>
+      </item>
+    </section>
+  </menu>
   <template class="OceansInkWindow" parent="AdwApplicationWindow">
     <property name="default-width">900</property>
     <property name="default-height">600</property>
@@ -47,7 +59,7 @@
               <object class="AdwNavigationSplitView">
                 <property name="sidebar">
                   <object class="AdwNavigationPage">
-                    <property name="title">Library</property>
+                    <property name="title">Oceans Ink</property>
                     <property name="child">
                       <object class="AdwToolbarView">
                         <child type="top">
@@ -115,6 +127,13 @@
                             <property name="title-widget">
                               <object class="AdwWindowTitle" id="content_title"/>
                             </property>
+                            <child type="end">
+                              <object class="GtkMenuButton">
+                                <property name="icon-name">open-menu-symbolic</property>
+                                <property name="menu-model">primary_menu</property>
+                                <property name="tooltip-text" translatable="no">Main Menu</property>
+                              </object>
+                            </child>
                           </object>
                         </child>
                         <property name="content">
@@ -133,4 +152,35 @@
       </object>
     </property>
   </template>
+  <object class="AdwShortcutsDialog" id="shortcuts_dialog">
+    <child>
+      <object class="AdwShortcutsSection">
+        <property name="title" translatable="no">General</property>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Move down the list</property>
+            <property name="accelerator">j</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Move up the list</property>
+            <property name="accelerator">k</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Open the selected article</property>
+            <property name="accelerator">Return</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Keyboard Shortcuts</property>
+            <property name="action-name">win.keyboard-shortcuts</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
 </interface>
