@@ -1219,7 +1219,7 @@ impl Window {
             .vexpand(true)
             .build();
         let stylesheet = webkit6::UserStyleSheet::new(
-            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; } .oi-article-date { color: #6b6b6b; margin: 0 0 1.5rem; font-size: 0.95rem; }",
+            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } iframe { width: 100%; height: auto; aspect-ratio: 16 / 9; border: 0; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; } .oi-article-date { color: #6b6b6b; margin: 0 0 1.5rem; font-size: 0.95rem; }",
             webkit6::UserContentInjectedFrames::AllFrames,
             webkit6::UserStyleLevel::User,
             &[] as &[&str],
