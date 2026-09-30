@@ -425,30 +425,21 @@ impl Window {
         };
 
         let menu = gtk::gio::Menu::new();
+        menu.append(Some("Open in browser"), Some("win.open-bookmark"));
 
-        let open_section = gtk::gio::Menu::new();
-        open_section.append(Some("Open in Browser"), Some("win.open-bookmark"));
-        menu.append_section(None, &open_section);
-
-        let like_section = gtk::gio::Menu::new();
         if bookmark.liked {
-            like_section.append(Some("Unlike"), Some("win.unlike-bookmark"));
+            menu.append(Some("Unlike"), Some("win.unlike-bookmark"));
         } else {
-            like_section.append(Some("Like"), Some("win.like-bookmark"));
+            menu.append(Some("Like"), Some("win.like-bookmark"));
         }
-        menu.append_section(None, &like_section);
 
-        let move_section = gtk::gio::Menu::new();
         if section_from_index(section_index) == Section::Archive {
-            move_section.append(Some("Move to Home"), Some("win.unarchive-bookmark"));
+            menu.append(Some("Move to home"), Some("win.unarchive-bookmark"));
         } else {
-            move_section.append(Some("Archive"), Some("win.archive-bookmark"));
+            menu.append(Some("Archive"), Some("win.archive-bookmark"));
         }
-        menu.append_section(None, &move_section);
 
-        let delete_section = gtk::gio::Menu::new();
-        delete_section.append(Some("Delete…"), Some("win.delete-bookmark"));
-        menu.append_section(None, &delete_section);
+        menu.append(Some("Delete…"), Some("win.delete-bookmark"));
 
         let popover = gtk::PopoverMenu::from_model(Some(&menu));
         popover.set_parent(list);
@@ -515,7 +506,7 @@ impl SectionView {
         loading.append(&gtk::Label::new(Some("Loading…")));
         loading.append(&spinner);
 
-        let retry = gtk::Button::builder().label("Try Again").build();
+        let retry = gtk::Button::builder().label("Try again").build();
         let error_page = adw::StatusPage::builder()
             .title("Could not load articles")
             .child(&retry)
