@@ -57,7 +57,11 @@ impl ThumbnailCache {
     fn key(url: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(url.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 
     pub fn get(&self, url: &str) -> Option<Vec<u8>> {
