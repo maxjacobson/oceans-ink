@@ -3,6 +3,9 @@
 An unofficial Instapaper client for GNOME, written in Rust.
 App ID: `net.hardscrabble.oceans-ink`
 
+> Vibecoded, just for fun. Not affiliated with, endorsed by, or connected to
+> Instapaper in any way. Instapaper is a product of Filterpaper, LLC.
+
 ## Building and running
 
 ```sh
