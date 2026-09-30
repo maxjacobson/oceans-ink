@@ -38,6 +38,8 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
   with accurate, succinct descriptions.
 - Run `just check` (fmt-check + clippy + tests) before finishing each change
   and keep it green.
+- Include a Crush attribution at the end of commit descriptions:
+  "💘 Generated with Crush" plus "Assisted-by: Crush:glm-5.3-flash".
 - Never commit credentials.
 
 ## Features
