@@ -26,6 +26,14 @@ Instapaper API v2 (beware: announced 2026-09-29, don't assume v1 API):
 - Flatpak cargo deps are vendored to gitignored build-aux/vendor; see
   README for the regenerate command
 - OAuth flow for other users: punted for now
+- In-app reader: clicking an article drills into a reader page (AdwNavigationView)
+  with a WebKitGTK 6.0 WebView showing GET /bookmarks/{id}/parse body HTML, loaded
+  against the article's original URL as base so relative images/links resolve.
+  Links clicked inside the article open in the browser instead of navigating
+  in-app. "Open in browser" in the context menu opens instapaper.com/read/{id}
+  for now (useful for tags/folders until we implement them in-app)
+- Beware: webkit6 crate 0.5 pairs with gtk4 0.10/glib 0.21; libsecret 0.9 pairs
+  with glib 0.22, hence the two gio/glib versions in Cargo.toml
 
 ## Build
 

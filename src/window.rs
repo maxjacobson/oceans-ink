@@ -6,7 +6,8 @@ mod imp {
     use adw::subclass::prelude::*;
     use gtk::glib;
 
-    use crate::instapaper::{Client, Section};
+    use super::ReaderWidgets;
+    use crate::instapaper::{Bookmark, Client, Section};
 
     #[derive(gtk::CompositeTemplate)]
     #[template(resource = "/net/hardscrabble/oceans-ink/ui/window.ui")]
@@ -25,6 +26,12 @@ mod imp {
         pub content_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
         pub shortcuts_dialog: TemplateChild<adw::ShortcutsDialog>,
+        #[template_child]
+        pub content_nav: TemplateChild<adw::NavigationView>,
+        pub(crate) reader: RefCell<Option<ReaderWidgets>>,
+        pub(crate) reader_current: RefCell<Option<(usize, usize, Bookmark)>>,
+        pub webview: RefCell<Option<webkit6::WebView>>,
+        pub webview_base_uri: RefCell<Option<String>>,
         pub(crate) sections: RefCell<Vec<super::SectionView>>,
         pub current_section: Cell<usize>,
         pub pending: Cell<Option<(usize, usize)>>,
@@ -41,6 +48,11 @@ mod imp {
                 lists_stack: TemplateChild::default(),
                 content_title: TemplateChild::default(),
                 shortcuts_dialog: TemplateChild::default(),
+                content_nav: TemplateChild::default(),
+                reader: RefCell::new(None),
+                reader_current: RefCell::new(None),
+                webview: RefCell::new(None),
+                webview_base_uri: RefCell::new(None),
                 sections: RefCell::new(Vec::new()),
                 current_section: Cell::new(0),
                 pending: Cell::new(None),
@@ -142,6 +154,7 @@ use std::sync::Arc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
+use webkit6::prelude::*;
 
 use crate::instapaper::{Bookmark, Client, Error, Section};
 
@@ -211,6 +224,9 @@ impl Window {
 
     fn select_section(&self, index: usize) {
         let imp = self.imp();
+        if self.reader_visible() {
+            imp.content_nav.pop();
+        }
         imp.current_section.set(index);
         if let Some(row) = imp.sections_list.row_at_index(index as i32) {
             imp.sections_list.select_row(Some(&row));
@@ -310,7 +326,13 @@ impl Window {
             .version(env!("CARGO_PKG_VERSION"))
             .developer_name("Maxwell Jacobson")
             .website("https://github.com/maxjacobson/oceans-ink")
-            .comments("An unofficial Instapaper client for GNOME, vibecoded just for fun.")
+            .comments(
+                "An unofficial Instapaper client for GNOME, vibecoded just for fun.\n\n\
+                 A fish swims in the sea. While the sea is, in a certain sense, contained \
+                 within the fish. Oh, what am I to think? What the writing of a thousand \
+                 lifetimes could not explain, if all the forest's trees were pens, and all \
+                 the oceans ink?",
+            )
             .build()
             .present(Some(self));
     }
@@ -332,7 +354,7 @@ impl Window {
 
         match name {
             "open-bookmark" => self.open_in_browser(&bookmark),
-            "delete-bookmark" => self.confirm_delete(section_index, row_index, bookmark.id),
+            "delete-bookmark" => self.confirm_delete(section_index, row_index, bookmark.id, false),
             "archive-bookmark" => self.mutate(
                 section_index,
                 row_index,
@@ -363,6 +385,10 @@ impl Window {
 
     fn open_in_browser(&self, bookmark: &Bookmark) {
         let url = bookmark.reader_url();
+        self.open_uri(url);
+    }
+
+    fn open_uri(&self, url: String) {
         let launcher = gtk::UriLauncher::new(&url);
         glib::spawn_future_local(glib::clone!(
             #[weak(rename_to = obj)]
@@ -381,7 +407,13 @@ impl Window {
         ));
     }
 
-    fn confirm_delete(&self, section_index: usize, row_index: usize, id: i64) {
+    fn confirm_delete(
+        &self,
+        section_index: usize,
+        row_index: usize,
+        id: i64,
+        return_to_list: bool,
+    ) {
         let dialog = adw::AlertDialog::builder()
             .heading("Delete bookmark?")
             .body("This permanently removes it from Instapaper. This cannot be undone.")
@@ -395,6 +427,9 @@ impl Window {
         let obj_weak = self.downgrade();
         dialog.connect_response(Some("delete"), move |_, _| {
             if let Some(obj) = obj_weak.upgrade() {
+                if return_to_list {
+                    obj.imp().content_nav.pop();
+                }
                 obj.mutate(
                     section_index,
                     row_index,
@@ -443,14 +478,16 @@ impl Window {
             if obj.imp().stack.visible_child_name().as_deref() != Some("main") {
                 return glib::Propagation::Proceed;
             }
+            let visible_tag = obj.imp().content_nav.visible_page_tag();
+            let tag = visible_tag.as_deref();
             let ctrl = modifier.contains(gtk::gdk::ModifierType::CONTROL_MASK);
             match (keyval.name().as_deref(), ctrl) {
-                (Some("j"), false) => {
+                (Some("j"), false) if tag == Some("list") => {
                     let index = obj.imp().current_section.get();
                     obj.imp().sections.borrow()[index].move_selection(1);
                     glib::Propagation::Stop
                 }
-                (Some("k"), false) => {
+                (Some("k"), false) if tag == Some("list") => {
                     let index = obj.imp().current_section.get();
                     obj.imp().sections.borrow()[index].move_selection(-1);
                     glib::Propagation::Stop
@@ -486,6 +523,21 @@ impl Window {
         self.add_controller(controller);
     }
 
+    fn run_reader_menu_action(&self, name: &str) {
+        let imp = self.imp();
+        let Some(current) = imp.reader_current.borrow().clone() else {
+            return;
+        };
+        let (_, _, bookmark) = current;
+        match name {
+            "toggle-like" => self.toggle_like(),
+            "toggle-archive" => self.toggle_archive(),
+            "open-bookmark" => self.open_in_browser(&bookmark),
+            "delete-bookmark" => self.delete_active(),
+            _ => {}
+        }
+    }
+
     fn switch_to_section(&self, index: usize) -> glib::Propagation {
         if self.imp().current_section.get() != index {
             self.select_section(index);
@@ -502,12 +554,49 @@ impl Window {
         Some((section_index, row_index, bookmark))
     }
 
+    fn reader_visible(&self) -> bool {
+        self.imp().content_nav.visible_page_tag().as_deref() == Some("reader")
+    }
+
+    fn active_bookmark(&self) -> Option<(usize, usize, Bookmark)> {
+        if self.reader_visible() {
+            return self.imp().reader_current.borrow().clone();
+        }
+        self.selected_bookmark()
+    }
+
+    fn refresh_reader_like_state(&self, liked: bool) {
+        let reader = self.reader();
+        reader.like_icon.set_visible(true);
+        reader
+            .like_icon
+            .set_icon_name(Some("oceans-ink-heart-filled-symbolic"));
+        reader.like_icon.set_css_classes(if liked {
+            &["oi-heart", "oi-liked"][..]
+        } else {
+            &["oi-heart"][..]
+        });
+        reader
+            .like_button
+            .set_tooltip_text(Some(if liked { "Unlike" } else { "Like" }));
+        reader
+            .like_label
+            .set_text(if liked { "Unlike" } else { "Like" });
+    }
+
     fn toggle_like(&self) {
-        let Some((section_index, row_index, bookmark)) = self.selected_bookmark() else {
+        let Some((section_index, row_index, bookmark)) = self.active_bookmark() else {
             return;
         };
+        let in_reader = self.reader_visible();
         let id = bookmark.id;
         let liked = !bookmark.liked;
+        if in_reader {
+            self.refresh_reader_like_state(liked);
+            if let Some((_, _, bookmark)) = self.imp().reader_current.borrow_mut().as_mut() {
+                bookmark.liked = liked;
+            }
+        }
         if !liked && section_from_index(section_index) == Section::Liked {
             self.mutate(
                 section_index,
@@ -515,6 +604,9 @@ impl Window {
                 Mutation::RemoveRow,
                 move |client| client.set_liked(id, false),
             );
+            if in_reader {
+                self.imp().content_nav.pop();
+            }
         } else {
             self.mutate(
                 section_index,
@@ -526,7 +618,7 @@ impl Window {
     }
 
     fn toggle_archive(&self) {
-        let Some((section_index, row_index, bookmark)) = self.selected_bookmark() else {
+        let Some((section_index, row_index, bookmark)) = self.active_bookmark() else {
             return;
         };
         let id = bookmark.id;
@@ -545,13 +637,340 @@ impl Window {
                 move |client| client.archive(id),
             );
         }
+        if self.reader_visible() {
+            self.imp().content_nav.pop();
+        }
     }
 
     fn delete_active(&self) {
-        let Some((section_index, row_index, bookmark)) = self.selected_bookmark() else {
+        let Some((section_index, row_index, bookmark)) = self.active_bookmark() else {
             return;
         };
-        self.confirm_delete(section_index, row_index, bookmark.id);
+        let return_to_list = self.reader_visible();
+        self.confirm_delete(section_index, row_index, bookmark.id, return_to_list);
+    }
+
+    fn open_reader(&self, section_index: usize, row_index: usize, bookmark: &Bookmark) {
+        let imp = self.imp();
+        let reader = self.reader();
+        reader.like_icon.set_visible(true);
+        reader
+            .like_icon
+            .set_icon_name(Some("oceans-ink-heart-filled-symbolic"));
+        reader.like_icon.set_css_classes(if bookmark.liked {
+            &["oi-heart", "oi-liked"][..]
+        } else {
+            &["oi-heart"][..]
+        });
+        reader
+            .like_button
+            .set_tooltip_text(Some(if bookmark.liked { "Unlike" } else { "Like" }));
+        reader
+            .like_label
+            .set_text(if bookmark.liked { "Unlike" } else { "Like" });
+        reader
+            .archive_label
+            .set_text(if section_from_index(section_index) == Section::Archive {
+                "Move to home"
+            } else {
+                "Archive"
+            });
+        *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
+
+        if is_youtube(bookmark.url.as_deref()) {
+            reader.stack.set_visible_child_name("external");
+            imp.content_nav.push_by_tag("reader");
+            return;
+        }
+
+        reader.stack.set_visible_child_name("loading");
+        imp.content_nav.push_by_tag("reader");
+
+        let Some(client) = imp.client.get().cloned() else {
+            return;
+        };
+        let id = bookmark.id;
+        let base_uri = bookmark.url.clone();
+        let obj_weak = self.downgrade();
+        glib::spawn_future_local(async move {
+            let result = gtk::gio::spawn_blocking(move || client.article(id)).await;
+            if let Some(obj) = obj_weak.upgrade() {
+                match result {
+                    Ok(Ok(article)) => obj.show_article(article, base_uri),
+                    Ok(Err(error)) => obj.show_article_error(&error.to_string()),
+                    Err(_) => obj.show_article_error("The request task failed"),
+                }
+            }
+        });
+    }
+
+    fn show_article(&self, article: crate::instapaper::ParsedArticle, base_uri: Option<String>) {
+        let imp = self.imp();
+        let Some(body) = article.content.body else {
+            self.show_article_error("This article has no readable content.");
+            return;
+        };
+        let title = article
+            .metadata
+            .title
+            .clone()
+            .filter(|title| !title.is_empty())
+            .or_else(|| {
+                imp.reader_current
+                    .borrow()
+                    .as_ref()
+                    .map(|(_, _, bookmark)| bookmark.display_title())
+            })
+            .unwrap_or_else(|| "Untitled".to_string());
+        let escaped_title = glib::markup_escape_text(&title);
+        let html = format!("<h1 class=\"oi-article-title\">{escaped_title}</h1>{body}");
+        *imp.webview_base_uri.borrow_mut() = base_uri.clone();
+        let webview = self.webview();
+        webview.load_html(&html, base_uri.as_deref());
+        self.reader().stack.set_visible_child_name("content");
+    }
+
+    fn show_article_error(&self, message: &str) {
+        let reader = self.reader();
+        reader.error.set_description(Some(message));
+        reader.stack.set_visible_child_name("error");
+    }
+
+    fn webview(&self) -> webkit6::WebView {
+        let imp = self.imp();
+        if let Some(existing) = imp.webview.borrow().as_ref() {
+            return existing.clone();
+        }
+
+        let webview = webkit6::WebView::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .build();
+        let stylesheet = webkit6::UserStyleSheet::new(
+            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; }",
+            webkit6::UserContentInjectedFrames::AllFrames,
+            webkit6::UserStyleLevel::User,
+            &[] as &[&str],
+            &[] as &[&str],
+        );
+        if let Some(manager) = webview.user_content_manager() {
+            manager.add_style_sheet(&stylesheet);
+        }
+        let window_weak = self.downgrade();
+        webview.connect_decide_policy(move |_, decision, decision_type| {
+            if decision_type != webkit6::PolicyDecisionType::NavigationAction {
+                return false;
+            }
+            let Some(navigation) = decision.downcast_ref::<webkit6::NavigationPolicyDecision>()
+            else {
+                return false;
+            };
+            let mut action = navigation.navigation_action().unwrap();
+            let Some(request) = action.request() else {
+                return false;
+            };
+            let Some(uri) = request.uri() else {
+                return false;
+            };
+            let uri = uri.to_string();
+            if !uri.starts_with("http://") && !uri.starts_with("https://") {
+                return false;
+            }
+            let same_page = window_weak.upgrade().is_some_and(|window| {
+                let base = window.imp().webview_base_uri.borrow().clone();
+                Some(without_fragment(&uri)) == base.as_deref().map(without_fragment)
+            });
+            if same_page {
+                return false;
+            }
+            decision.ignore();
+            let launcher = gtk::UriLauncher::new(&uri);
+            glib::spawn_future_local(async move {
+                let _ = launcher.launch_future(None::<&gtk::Window>).await;
+            });
+            true
+        });
+
+        self.reader().container.append(&webview);
+        *imp.webview.borrow_mut() = Some(webview.clone());
+        webview
+    }
+
+    fn reader(&self) -> ReaderWidgets {
+        if let Some(existing) = self.imp().reader.borrow().as_ref() {
+            return existing.clone();
+        }
+
+        let header = adw::HeaderBar::new();
+
+        let container = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .build();
+
+        let loading = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .valign(gtk::Align::Center)
+            .spacing(12)
+            .build();
+        loading.append(&gtk::Label::new(Some("Loading…")));
+        loading.append(&gtk::Spinner::builder().spinning(true).build());
+
+        let error = adw::StatusPage::builder()
+            .title("Could not load article")
+            .build();
+
+        let external_button = gtk::Button::builder()
+            .label("Open in Browser")
+            .css_classes(["suggested-action", "pill"])
+            .halign(gtk::Align::Center)
+            .build();
+        let external_window = self.downgrade();
+        external_button.connect_clicked(move |_| {
+            if let Some(obj) = external_window.upgrade() {
+                let url = obj
+                    .imp()
+                    .reader_current
+                    .borrow()
+                    .clone()
+                    .and_then(|(_, _, b)| b.url);
+                if let Some(url) = url {
+                    obj.open_uri(url);
+                }
+            }
+        });
+        let external = adw::StatusPage::builder()
+            .title("This article is a video")
+            .description("Instapaper could not parse it. Watch it in your browser instead.")
+            .child(&external_button)
+            .build();
+
+        let stack = gtk::Stack::builder()
+            .transition_type(gtk::StackTransitionType::Crossfade)
+            .vexpand(true)
+            .build();
+        stack.add_named(&loading, Some("loading"));
+        stack.add_named(&container, Some("content"));
+        stack.add_named(&error, Some("error"));
+        stack.add_named(&external, Some("external"));
+
+        let like_label = gtk::Label::builder()
+            .label("Like")
+            .halign(gtk::Align::Start)
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        let like_box = gtk::Box::builder().spacing(12).build();
+        like_box.append(&like_label);
+        like_box.append(&adw::ShortcutLabel::new("l"));
+        let like_button = gtk::Button::builder()
+            .child(&like_box)
+            .css_classes(["flat"])
+            .build();
+        let like_window = self.downgrade();
+        like_button.connect_clicked(move |_| {
+            if let Some(obj) = like_window.upgrade() {
+                obj.run_reader_menu_action("toggle-like");
+            }
+        });
+
+        let archive_label = gtk::Label::builder()
+            .label("Archive")
+            .halign(gtk::Align::Start)
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        let archive_box = gtk::Box::builder().spacing(12).build();
+        archive_box.append(&archive_label);
+        archive_box.append(&adw::ShortcutLabel::new("y"));
+        let archive_button = gtk::Button::builder()
+            .child(&archive_box)
+            .css_classes(["flat"])
+            .build();
+        let archive_window = self.downgrade();
+        archive_button.connect_clicked(move |_| {
+            if let Some(obj) = archive_window.upgrade() {
+                obj.run_reader_menu_action("toggle-archive");
+            }
+        });
+
+        let open_button = menu_item("Open in browser", None);
+        let open_window = self.downgrade();
+        open_button.connect_clicked(move |_| {
+            if let Some(obj) = open_window.upgrade() {
+                obj.run_reader_menu_action("open-bookmark");
+            }
+        });
+
+        let delete_button = menu_item("Delete…", Some("BackSpace"));
+        let delete_window = self.downgrade();
+        delete_button.connect_clicked(move |_| {
+            if let Some(obj) = delete_window.upgrade() {
+                obj.run_reader_menu_action("delete-bookmark");
+            }
+        });
+
+        let like_icon = gtk::Image::builder()
+            .icon_name("oceans-ink-heart-outline-symbolic")
+            .visible(false)
+            .build();
+        let header_like_button = gtk::Button::builder()
+            .child(&like_icon)
+            .css_classes(["flat"])
+            .tooltip_text("Like")
+            .build();
+        let header_like_window = self.downgrade();
+        header_like_button.connect_clicked(move |_| {
+            if let Some(obj) = header_like_window.upgrade() {
+                obj.toggle_like();
+            }
+        });
+
+        let menu_items = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .margin_top(6)
+            .margin_bottom(6)
+            .build();
+        menu_items.append(&like_button);
+        menu_items.append(&archive_button);
+        menu_items.append(&open_button);
+        menu_items.append(&delete_button);
+
+        let popover = gtk::Popover::builder()
+            .css_classes(["menu"])
+            .child(&menu_items)
+            .build();
+        let menu_button = gtk::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .popover(&popover)
+            .tooltip_text("Article actions")
+            .build();
+        header.pack_end(&menu_button);
+        header.pack_end(&header_like_button);
+
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+        toolbar.set_content(Some(&stack));
+
+        let page = adw::NavigationPage::builder()
+            .tag("reader")
+            .title("Article")
+            .child(&toolbar)
+            .build();
+        self.imp().content_nav.add(&page);
+
+        let widgets = ReaderWidgets {
+            page,
+            stack,
+            container,
+            error,
+            like_button: header_like_button,
+            like_icon,
+            like_label,
+            archive_label,
+            external_button,
+        };
+        *self.imp().reader.borrow_mut() = Some(widgets.clone());
+        widgets
     }
 
     fn show_bookmark_menu(
@@ -574,21 +993,13 @@ impl Window {
             .margin_bottom(6)
             .build();
 
-        let add_item = |label: &str| -> gtk::Button {
-            let text = gtk::Label::builder()
-                .label(label)
-                .halign(gtk::Align::Start)
-                .xalign(0.0)
-                .build();
-            let button = gtk::Button::builder()
-                .child(&text)
-                .css_classes(["flat"])
-                .build();
+        let add_item = |label: &str, shortcut: Option<&str>| -> gtk::Button {
+            let button = menu_item(label, shortcut);
             items.append(&button);
             button
         };
 
-        let open_item = add_item("Open in browser");
+        let open_item = add_item("Open in browser", None);
         let open_window = self.downgrade();
         let open_popover = popover.downgrade();
         open_item.connect_clicked(move |_| {
@@ -601,7 +1012,7 @@ impl Window {
         });
         items.append(&open_item);
 
-        let like_item = add_item(if bookmark.liked { "Unlike" } else { "Like" });
+        let like_item = add_item(if bookmark.liked { "Unlike" } else { "Like" }, Some("l"));
         let like_window = self.downgrade();
         let like_popover = popover.downgrade();
         like_item.connect_clicked(move |_| {
@@ -618,11 +1029,14 @@ impl Window {
         });
         items.append(&like_item);
 
-        let archive_item = add_item(if section_from_index(section_index) == Section::Archive {
-            "Move to home"
-        } else {
-            "Archive"
-        });
+        let archive_item = add_item(
+            if section_from_index(section_index) == Section::Archive {
+                "Move to home"
+            } else {
+                "Archive"
+            },
+            Some("y"),
+        );
         let archive_window = self.downgrade();
         let archive_popover = popover.downgrade();
         archive_item.connect_clicked(move |_| {
@@ -639,7 +1053,7 @@ impl Window {
         });
         items.append(&archive_item);
 
-        let delete_item = add_item("Delete…");
+        let delete_item = add_item("Delete…", Some("BackSpace"));
         let delete_window = self.downgrade();
         let delete_popover = popover.downgrade();
         delete_item.connect_clicked(move |_| {
@@ -674,6 +1088,7 @@ fn section_from_index(index: usize) -> Section {
 }
 
 pub(crate) struct SectionView {
+    section: Section,
     stack: gtk::Stack,
     list: gtk::ListBox,
     error_page: adw::StatusPage,
@@ -684,6 +1099,7 @@ pub(crate) struct SectionView {
 impl Clone for SectionView {
     fn clone(&self) -> Self {
         Self {
+            section: self.section,
             stack: self.stack.clone(),
             list: self.list.clone(),
             error_page: self.error_page.clone(),
@@ -750,7 +1166,7 @@ impl SectionView {
                 if let Some(bookmark) =
                     window.imp().sections.borrow()[section_index].bookmark_at(row.index() as usize)
                 {
-                    window.open_in_browser(&bookmark);
+                    window.open_reader(section_index, row.index() as usize, &bookmark);
                 }
             }
         });
@@ -779,6 +1195,7 @@ impl SectionView {
         list.add_controller(gesture);
 
         Self {
+            section: section_from_index(index),
             stack,
             list,
             error_page,
@@ -817,9 +1234,15 @@ impl SectionView {
                 .subtitle(host_of(bookmark.url.as_deref()))
                 .activatable(true)
                 .build();
+            let show_heart = bookmark.liked && self.section != Section::Liked;
             let icon = gtk::Image::builder()
                 .icon_name("oceans-ink-heart-filled-symbolic")
-                .visible(bookmark.liked)
+                .css_classes(if bookmark.liked {
+                    &["oi-heart", "oi-liked"][..]
+                } else {
+                    &["oi-heart"][..]
+                })
+                .visible(show_heart)
                 .build();
             row.add_suffix(&icon);
             self.icons.borrow_mut().push(icon);
@@ -855,7 +1278,12 @@ impl SectionView {
         }
         if let Some(icon) = self.icons.borrow().get(index) {
             icon.set_icon_name(Some("oceans-ink-heart-filled-symbolic"));
-            icon.set_visible(liked);
+            icon.set_css_classes(if liked {
+                &["oi-heart", "oi-liked"][..]
+            } else {
+                &["oi-heart"][..]
+            });
+            icon.set_visible(liked && self.section != Section::Liked);
         }
     }
 
@@ -879,6 +1307,60 @@ impl SectionView {
             row.grab_focus();
         }
     }
+}
+
+pub(crate) struct ReaderWidgets {
+    pub page: adw::NavigationPage,
+    pub stack: gtk::Stack,
+    pub container: gtk::Box,
+    pub error: adw::StatusPage,
+    pub like_button: gtk::Button,
+    pub like_icon: gtk::Image,
+    pub like_label: gtk::Label,
+    pub archive_label: gtk::Label,
+    pub external_button: gtk::Button,
+}
+
+impl Clone for ReaderWidgets {
+    fn clone(&self) -> Self {
+        Self {
+            page: self.page.clone(),
+            stack: self.stack.clone(),
+            container: self.container.clone(),
+            error: self.error.clone(),
+            like_button: self.like_button.clone(),
+            like_icon: self.like_icon.clone(),
+            like_label: self.like_label.clone(),
+            archive_label: self.archive_label.clone(),
+            external_button: self.external_button.clone(),
+        }
+    }
+}
+
+fn menu_item(label: &str, shortcut: Option<&str>) -> gtk::Button {
+    let text = gtk::Label::builder()
+        .label(label)
+        .halign(gtk::Align::Start)
+        .xalign(0.0)
+        .hexpand(true)
+        .build();
+    let box_ = gtk::Box::builder().spacing(12).build();
+    box_.append(&text);
+    if let Some(shortcut) = shortcut {
+        box_.append(&adw::ShortcutLabel::new(shortcut));
+    }
+    gtk::Button::builder()
+        .child(&box_)
+        .css_classes(["flat"])
+        .build()
+}
+
+fn is_youtube(url: Option<&str>) -> bool {
+    matches!(url, Some(u) if u.contains("youtube.com/") || u.contains("youtu.be/"))
+}
+
+fn without_fragment(uri: &str) -> &str {
+    uri.split('#').next().unwrap_or(uri)
 }
 
 fn host_of(url: Option<&str>) -> String {

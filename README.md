@@ -6,6 +6,17 @@ App ID: `net.hardscrabble.oceans-ink`
 > Vibecoded, just for fun. Not affiliated with, endorsed by, or connected to
 > Instapaper in any way. Instapaper is a product of Filterpaper, LLC.
 
+## Setup
+
+Host build dependencies (Fedora package names):
+
+```sh
+sudo dnf install gtk4-devel libadwaita-devel libsecret-devel webkitgtk6.0-devel
+```
+
+Plus the usual tooling: a Rust toolchain (rustup), `meson`, `just`,
+`git`, and `flatpak` with the flathub remote.
+
 ## Building and running
 
 ```sh

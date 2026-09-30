@@ -48,7 +48,11 @@ fn main() -> glib::ExitCode {
         register_resources();
 
         let css = gtk::CssProvider::new();
-        css.load_from_string("popover.menu button { font-weight: normal; }");
+        css.load_from_string(
+            "popover.menu button { font-weight: normal; } \
+             .oi-heart { opacity: 0.4; } \
+             .oi-heart.oi-liked { color: #e01b24; opacity: 1; }",
+        );
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
                 &display,
