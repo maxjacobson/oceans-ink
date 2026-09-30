@@ -23,6 +23,8 @@ mod imp {
         pub lists_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub content_title: TemplateChild<adw::WindowTitle>,
+        #[template_child]
+        pub shortcuts_dialog: TemplateChild<adw::ShortcutsDialog>,
         pub(crate) sections: RefCell<Vec<super::SectionView>>,
         pub current_section: Cell<usize>,
         pub pending: Cell<Option<(usize, usize)>>,
@@ -38,6 +40,7 @@ mod imp {
                 sections_list: TemplateChild::default(),
                 lists_stack: TemplateChild::default(),
                 content_title: TemplateChild::default(),
+                shortcuts_dialog: TemplateChild::default(),
                 sections: RefCell::new(Vec::new()),
                 current_section: Cell::new(0),
                 pending: Cell::new(None),
@@ -222,8 +225,6 @@ impl Window {
     }
 
     fn setup_actions(&self) {
-        let actions = gtk::gio::SimpleActionGroup::new();
-
         for name in [
             "open-bookmark",
             "archive-bookmark",
@@ -240,10 +241,47 @@ impl Window {
                     obj.run_bookmark_action(&name);
                 }
             });
-            actions.add_action(&action);
+            self.add_action(&action);
         }
 
-        self.insert_action_group("win", Some(&actions));
+        let about = gtk::gio::SimpleAction::new("about", None);
+        let about_weak = self.downgrade();
+        about.connect_activate(move |_, _| {
+            if let Some(obj) = about_weak.upgrade() {
+                obj.show_about();
+            }
+        });
+        self.add_action(&about);
+
+        let shortcuts = gtk::gio::SimpleAction::new("keyboard-shortcuts", None);
+        let shortcuts_weak = self.downgrade();
+        shortcuts.connect_activate(move |_, _| {
+            if let Some(obj) = shortcuts_weak.upgrade() {
+                obj.show_shortcuts();
+            }
+        });
+        self.add_action(&shortcuts);
+
+        if let Some(app) = self.application() {
+            app.set_accels_for_action("win.keyboard-shortcuts", &["<Ctrl>question"]);
+        }
+    }
+
+    fn show_about(&self) {
+        adw::AboutDialog::builder()
+            .application_name("Oceans Ink")
+            .application_icon("net.hardscrabble.oceans-ink")
+            .version(env!("CARGO_PKG_VERSION"))
+            .developer_name("Max Jacobson")
+            .website("https://github.com/maxjacobson/oceans-ink")
+            .license_type(gtk::License::MitX11)
+            .comments("Unofficial Instapaper client for GNOME. Vibecoded, just for fun.")
+            .build()
+            .present(Some(self));
+    }
+
+    fn show_shortcuts(&self) {
+        self.imp().shortcuts_dialog.present(Some(self));
     }
 
     fn run_bookmark_action(&self, name: &str) {
@@ -575,7 +613,8 @@ impl SectionView {
                 .activatable(true)
                 .build();
             let icon = gtk::Image::builder()
-                .icon_name(liked_icon_name(bookmark.liked))
+                .icon_name("oceans-ink-heart-filled-symbolic")
+                .visible(bookmark.liked)
                 .build();
             row.add_suffix(&icon);
             self.icons.borrow_mut().push(icon);
@@ -610,7 +649,8 @@ impl SectionView {
             bookmark.liked = liked;
         }
         if let Some(icon) = self.icons.borrow().get(index) {
-            icon.set_icon_name(Some(liked_icon_name(liked)));
+            icon.set_icon_name(Some("oceans-ink-heart-filled-symbolic"));
+            icon.set_visible(liked);
         }
     }
 
@@ -629,14 +669,6 @@ impl SectionView {
             self.list.select_row(Some(&row));
             row.grab_focus();
         }
-    }
-}
-
-fn liked_icon_name(liked: bool) -> &'static str {
-    if liked {
-        "oceans-ink-heart-filled-symbolic"
-    } else {
-        "oceans-ink-heart-outline-symbolic"
     }
 }
 
