@@ -1122,6 +1122,18 @@ impl Window {
                 }
                 None => reader.external_date.set_visible(false),
             }
+            match bookmark.url.as_deref() {
+                Some(url) => {
+                    let escaped = glib::markup_escape_text(url)
+                        .to_string()
+                        .replace('"', "%22");
+                    reader
+                        .external_url
+                        .set_markup(&format!("<a href=\"{escaped}\">{escaped}</a>"));
+                    reader.external_url.set_visible(true);
+                }
+                None => reader.external_url.set_visible(false),
+            }
             reader.external_thumb.set_visible(false);
             reader.stack.set_visible_child_name("external");
             if push {
@@ -1185,7 +1197,20 @@ impl Window {
             .and_then(|(_, _, bookmark)| bookmark.added_date())
             .map(|date| format!("<div class=\"oi-article-date\">Added {date}</div>"))
             .unwrap_or_default();
-        let html = format!("<h1 class=\"oi-article-title\">{escaped_title}</h1>{added}{body}");
+        let url_line = imp
+            .reader_current
+            .borrow()
+            .as_ref()
+            .and_then(|(_, _, bookmark)| bookmark.url.clone())
+            .map(|url| {
+                let escaped = glib::markup_escape_text(&url)
+                    .to_string()
+                    .replace('"', "%22");
+                format!("<div class=\"oi-article-url\"><a href=\"{escaped}\">{escaped}</a></div>")
+            })
+            .unwrap_or_default();
+        let html =
+            format!("<h1 class=\"oi-article-title\">{escaped_title}</h1>{added}{url_line}{body}");
         *imp.webview_base_uri.borrow_mut() = base_uri.clone();
         let webview = self.webview();
         webview.load_html(&html, base_uri.as_deref());
@@ -1219,7 +1244,7 @@ impl Window {
             .vexpand(true)
             .build();
         let stylesheet = webkit6::UserStyleSheet::new(
-            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } iframe { width: 100%; height: auto; aspect-ratio: 16 / 9; border: 0; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; } .oi-article-date { color: #6b6b6b; margin: 0 0 1.5rem; font-size: 0.95rem; }",
+            "body { max-width: 42rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; font-family: sans-serif; line-height: 1.6; } img, video { max-width: 100%; height: auto; } iframe { width: 100%; height: auto; aspect-ratio: 16 / 9; border: 0; } .oi-article-title { margin: 0 0 1rem; line-height: 1.25; } .oi-article-date { color: #6b6b6b; margin: 0 0 1.5rem; font-size: 0.95rem; } .oi-article-url { color: #6b6b6b; font-style: italic; font-size: 0.95rem; margin: -0.75rem 0 1.5rem; word-break: break-all; } .oi-article-url a { color: inherit; }",
             webkit6::UserContentInjectedFrames::AllFrames,
             webkit6::UserStyleLevel::User,
             &[] as &[&str],
@@ -1331,6 +1356,19 @@ impl Window {
             .xalign(0.0)
             .visible(false)
             .build();
+        let external_url = gtk::Label::builder()
+            .wrap(true)
+            .xalign(0.0)
+            .css_classes(["oi-url"])
+            .visible(false)
+            .build();
+        let url_window = self.downgrade();
+        external_url.connect_activate_link(move |label, _| {
+            if let Some(obj) = url_window.upgrade() {
+                obj.open_uri(label.text().to_string());
+            }
+            glib::Propagation::Stop
+        });
         let thumb_button = gtk::Button::builder()
             .child(&external_thumb)
             .css_classes(["flat"])
@@ -1360,6 +1398,7 @@ impl Window {
             .build();
         external.append(&external_heading);
         external.append(&external_date);
+        external.append(&external_url);
         external.append(&thumb_button);
         external.append(&external_button);
 
@@ -1476,6 +1515,7 @@ impl Window {
             external_heading,
             external_thumb,
             external_date,
+            external_url,
             external_button,
         };
         *self.imp().reader.borrow_mut() = Some(widgets.clone());
@@ -2003,6 +2043,7 @@ pub(crate) struct ReaderWidgets {
     pub external_heading: gtk::Label,
     pub external_thumb: gtk::Picture,
     pub external_date: gtk::Label,
+    pub external_url: gtk::Label,
 
     pub external_button: gtk::Button,
 }
@@ -2023,6 +2064,7 @@ impl Clone for ReaderWidgets {
             external_heading: self.external_heading.clone(),
             external_thumb: self.external_thumb.clone(),
             external_date: self.external_date.clone(),
+            external_url: self.external_url.clone(),
 
             external_button: self.external_button.clone(),
         }

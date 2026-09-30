@@ -52,7 +52,9 @@ fn main() -> glib::ExitCode {
         css.load_from_string(
             "popover.menu button { font-weight: normal; } \
              .oi-heart { opacity: 0.4; } \
-             .oi-heart.oi-liked { color: #e01b24; opacity: 1; }",
+             .oi-heart.oi-liked { color: #e01b24; opacity: 1; } \
+             .oi-url { font-style: italic; opacity: 0.6; } \
+             .oi-url link { color: @window_fg_color; text-decoration: none; }",
         );
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
