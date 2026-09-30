@@ -407,4 +407,29 @@ mod tests {
         assert_eq!(offset_for_page(1), 100);
         assert_eq!(offset_for_page(3), 300);
     }
+
+    #[test]
+    #[ignore = "hits the live Instapaper API with the keyring token"]
+    fn live_api_offset_paginates() {
+        let Some(token) = crate::secret::get_token() else {
+            panic!("no token in the keyring");
+        };
+        let client = Client::new(token);
+        let first = client.bookmarks(Section::Home, 0).expect("first page");
+        let second = client
+            .bookmarks(Section::Home, BOOKMARKS_LIMIT)
+            .expect("second page");
+        if first.total <= BOOKMARKS_LIMIT as u64 {
+            eprintln!(
+                "home has {} bookmarks; add more to exercise pagination",
+                first.total
+            );
+            return;
+        }
+        assert_eq!(first.total, second.total);
+        assert_ne!(
+            first.bookmarks[0].id, second.bookmarks[0].id,
+            "offset did not move to the next page"
+        );
+    }
 }
