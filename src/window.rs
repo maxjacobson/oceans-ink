@@ -199,6 +199,9 @@ impl Window {
     fn select_section(&self, index: usize) {
         let imp = self.imp();
         imp.current_section.set(index);
+        if let Some(row) = imp.sections_list.row_at_index(index as i32) {
+            imp.sections_list.select_row(Some(&row));
+        }
         imp.content_title.set_title(Self::section_name(index));
         imp.lists_stack
             .set_visible_child_name(section_from_index(index).query_value());
@@ -262,8 +265,28 @@ impl Window {
         });
         self.add_action(&shortcuts);
 
+        let select_section =
+            gtk::gio::SimpleAction::new("select-section", Some(glib::VariantTy::INT32));
+        let select_weak = self.downgrade();
+        select_section.connect_activate(move |_, parameter| {
+            let index = parameter
+                .and_then(|value| value.get::<i32>())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
+            if let Some(obj) = select_weak
+                .upgrade()
+                .filter(|obj| obj.imp().current_section.get() != index)
+            {
+                obj.select_section(index)
+            }
+        });
+        self.add_action(&select_section);
+
         if let Some(app) = self.application() {
             app.set_accels_for_action("win.keyboard-shortcuts", &["<Ctrl>question"]);
+            for (index, accel) in ["<Ctrl>1", "<Ctrl>2", "<Ctrl>3"].iter().enumerate() {
+                app.set_accels_for_action(&format!("win.select-section({index})"), &[accel]);
+            }
         }
     }
 

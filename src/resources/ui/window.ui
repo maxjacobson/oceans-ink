@@ -212,6 +212,24 @@
         </child>
         <child>
           <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Go to Home</property>
+            <property name="accelerator">&lt;Ctrl&gt;1</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Go to Liked</property>
+            <property name="accelerator">&lt;Ctrl&gt;2</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Go to Archive</property>
+            <property name="accelerator">&lt;Ctrl&gt;3</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
             <property name="title" translatable="no">Quit</property>
             <property name="action-name">app.quit</property>
           </object>
