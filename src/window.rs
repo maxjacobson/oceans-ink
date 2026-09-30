@@ -842,6 +842,20 @@ impl Window {
             } else {
                 "Archive"
             });
+        reader.archive_icon.set_icon_name(Some(
+            if section_from_index(section_index) == Section::Archive {
+                "edit-undo-symbolic"
+            } else {
+                "oceans-ink-archive-symbolic"
+            },
+        ));
+        reader.archive_button.set_tooltip_text(Some(
+            if section_from_index(section_index) == Section::Archive {
+                "Move to home"
+            } else {
+                "Archive"
+            },
+        ));
         *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
 
         if is_video(bookmark.url.as_deref()) {
@@ -907,7 +921,17 @@ impl Window {
 
     fn show_article_error(&self, message: &str) {
         let reader = self.reader();
-        reader.error.set_description(Some(message));
+        let title = self
+            .imp()
+            .reader_current
+            .borrow()
+            .as_ref()
+            .map(|(_, _, bookmark)| bookmark.display_title())
+            .unwrap_or_else(|| "Could not load article".to_string());
+        reader.error.set_title(&title);
+        reader
+            .error
+            .set_description(Some(&format!("Could not load the article. {message}")));
         reader.stack.set_visible_child_name("error");
     }
 
@@ -1143,6 +1167,22 @@ impl Window {
             }
         });
 
+        let archive_icon = gtk::Image::builder()
+            .icon_name("oceans-ink-archive-symbolic")
+            .build();
+        let header_archive_button = gtk::Button::builder()
+            .child(&archive_icon)
+            .css_classes(["flat"])
+            .tooltip_text("Archive")
+            .build();
+        header_archive_button.set_cursor_from_name(Some("pointer"));
+        let header_archive_window = self.downgrade();
+        header_archive_button.connect_clicked(move |_| {
+            if let Some(obj) = header_archive_window.upgrade() {
+                obj.toggle_archive();
+            }
+        });
+
         let menu_items = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .margin_top(6)
@@ -1164,6 +1204,7 @@ impl Window {
             .build();
         header.pack_end(&menu_button);
         header.pack_end(&header_like_button);
+        header.pack_end(&header_archive_button);
 
         let toolbar = adw::ToolbarView::new();
         toolbar.add_top_bar(&header);
@@ -1183,6 +1224,8 @@ impl Window {
             error,
             like_button: header_like_button,
             like_icon,
+            archive_button: header_archive_button,
+            archive_icon,
             external_heading,
             external_thumb,
             like_label,
@@ -1583,6 +1626,8 @@ pub(crate) struct ReaderWidgets {
     pub error: adw::StatusPage,
     pub like_button: gtk::Button,
     pub like_icon: gtk::Image,
+    pub archive_button: gtk::Button,
+    pub archive_icon: gtk::Image,
     pub external_heading: gtk::Label,
     pub external_thumb: gtk::Picture,
     pub like_label: gtk::Label,
@@ -1599,6 +1644,8 @@ impl Clone for ReaderWidgets {
             error: self.error.clone(),
             like_button: self.like_button.clone(),
             like_icon: self.like_icon.clone(),
+            archive_button: self.archive_button.clone(),
+            archive_icon: self.archive_icon.clone(),
             external_heading: self.external_heading.clone(),
             external_thumb: self.external_thumb.clone(),
             like_label: self.like_label.clone(),
