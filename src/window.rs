@@ -260,18 +260,30 @@ impl Window {
         match name {
             "open-bookmark" => self.open_in_browser(&bookmark),
             "delete-bookmark" => self.confirm_delete(section_index, row_index, bookmark.id),
-            "archive-bookmark" => self.mutate(section_index, row_index, move |client| {
-                client.archive(bookmark.id)
-            }),
-            "unarchive-bookmark" => self.mutate(section_index, row_index, move |client| {
-                client.unarchive(bookmark.id)
-            }),
-            "like-bookmark" => self.mutate(section_index, row_index, move |client| {
-                client.set_liked(bookmark.id, true)
-            }),
-            "unlike-bookmark" => self.mutate(section_index, row_index, move |client| {
-                client.set_liked(bookmark.id, false)
-            }),
+            "archive-bookmark" => self.mutate(
+                section_index,
+                row_index,
+                Mutation::RemoveRow,
+                move |client| client.archive(bookmark.id),
+            ),
+            "unarchive-bookmark" => self.mutate(
+                section_index,
+                row_index,
+                Mutation::RemoveRow,
+                move |client| client.unarchive(bookmark.id),
+            ),
+            "like-bookmark" => self.mutate(
+                section_index,
+                row_index,
+                Mutation::SetLiked(true),
+                move |client| client.set_liked(bookmark.id, true),
+            ),
+            "unlike-bookmark" => self.mutate(
+                section_index,
+                row_index,
+                Mutation::SetLiked(false),
+                move |client| client.set_liked(bookmark.id, false),
+            ),
             _ => {}
         }
     }
@@ -302,7 +314,12 @@ impl Window {
         let obj_weak = self.downgrade();
         dialog.connect_response(Some("delete"), move |_, _| {
             if let Some(obj) = obj_weak.upgrade() {
-                obj.mutate(section_index, row_index, move |client| client.delete(id));
+                obj.mutate(
+                    section_index,
+                    row_index,
+                    Mutation::RemoveRow,
+                    move |client| client.delete(id),
+                );
             }
         });
 
@@ -313,6 +330,7 @@ impl Window {
         &self,
         section_index: usize,
         row_index: usize,
+        mutation: Mutation,
         call: impl FnOnce(&Client) -> Result<(), Error> + Send + 'static,
     ) {
         let imp = self.imp();
@@ -324,7 +342,10 @@ impl Window {
         glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(move || call(&client)).await;
             if matches!(result, Ok(Ok(()))) {
-                view.remove_row(row_index);
+                match mutation {
+                    Mutation::RemoveRow => view.remove_row(row_index),
+                    Mutation::SetLiked(liked) => view.update_liked(row_index, liked),
+                }
             } else {
                 view.set_error("The change could not be saved. Reload to try again.");
             }
@@ -400,6 +421,11 @@ impl Window {
     }
 }
 
+enum Mutation {
+    RemoveRow,
+    SetLiked(bool),
+}
+
 fn section_from_index(index: usize) -> Section {
     match index {
         0 => Section::Home,
@@ -413,6 +439,7 @@ pub(crate) struct SectionView {
     list: gtk::ListBox,
     error_page: adw::StatusPage,
     bookmarks: std::rc::Rc<std::cell::RefCell<Vec<Bookmark>>>,
+    icons: std::rc::Rc<std::cell::RefCell<Vec<gtk::Image>>>,
 }
 
 impl Clone for SectionView {
@@ -422,6 +449,7 @@ impl Clone for SectionView {
             list: self.list.clone(),
             error_page: self.error_page.clone(),
             bookmarks: self.bookmarks.clone(),
+            icons: self.icons.clone(),
         }
     }
 }
@@ -512,6 +540,7 @@ impl SectionView {
             list,
             error_page,
             bookmarks: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            icons: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
         }
     }
 
@@ -534,6 +563,7 @@ impl SectionView {
 
     fn set_bookmarks(&self, bookmarks: Vec<Bookmark>) {
         *self.bookmarks.borrow_mut() = bookmarks;
+        self.icons.borrow_mut().clear();
 
         self.list.remove_all();
 
@@ -544,6 +574,11 @@ impl SectionView {
                 .subtitle(host_of(bookmark.url.as_deref()))
                 .activatable(true)
                 .build();
+            let icon = gtk::Image::builder()
+                .icon_name(liked_icon_name(bookmark.liked))
+                .build();
+            row.add_suffix(&icon);
+            self.icons.borrow_mut().push(icon);
             self.list.append(&row);
         }
 
@@ -561,11 +596,21 @@ impl SectionView {
 
     fn remove_row(&self, index: usize) {
         self.bookmarks.borrow_mut().remove(index);
+        self.icons.borrow_mut().remove(index);
         if let Some(row) = self.list.row_at_index(index as i32) {
             self.list.remove(&row);
         }
         if self.bookmarks.borrow().is_empty() {
             self.stack.set_visible_child_name("empty");
+        }
+    }
+
+    fn update_liked(&self, index: usize, liked: bool) {
+        if let Some(bookmark) = self.bookmarks.borrow_mut().get_mut(index) {
+            bookmark.liked = liked;
+        }
+        if let Some(icon) = self.icons.borrow().get(index) {
+            icon.set_icon_name(Some(liked_icon_name(liked)));
         }
     }
 
@@ -584,6 +629,14 @@ impl SectionView {
             self.list.select_row(Some(&row));
             row.grab_focus();
         }
+    }
+}
+
+fn liked_icon_name(liked: bool) -> &'static str {
+    if liked {
+        "starred-symbolic"
+    } else {
+        "non-starred-symbolic"
     }
 }
 
