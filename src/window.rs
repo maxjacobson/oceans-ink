@@ -540,7 +540,7 @@ impl SectionView {
         let bookmarks = self.bookmarks.borrow();
         for bookmark in bookmarks.iter() {
             let row = adw::ActionRow::builder()
-                .title(bookmark.display_title())
+                .title(glib::markup_escape_text(&bookmark.display_title()))
                 .subtitle(host_of(bookmark.url.as_deref()))
                 .activatable(true)
                 .build();
