@@ -144,7 +144,7 @@ impl Client {
             .query(&[("section", section.query_value()), ("limit", "500")])
             .bearer_auth(&self.token)
             .send()?;
-        let list: BookmarkList = self.check(response)?.json()?;
+        let list: BookmarkList = Self::decode_json(response)?;
         Ok(BookmarkPage {
             bookmarks: list.bookmarks,
             total: list.total,
@@ -166,8 +166,24 @@ impl Client {
             .query(&[("section", section.query_value()), ("limit", "1")])
             .bearer_auth(&self.token)
             .send()?;
-        let list: BookmarkList = self.check(response)?.json()?;
+        let list: BookmarkList = Self::decode_json(response)?;
         Ok(list.total)
+    }
+
+    fn decode_json<T: serde::de::DeserializeOwned>(
+        response: reqwest::blocking::Response,
+    ) -> Result<T, Error> {
+        let text = response.text()?;
+        match serde_json::from_str(&text) {
+            Ok(parsed) => Ok(parsed),
+            Err(_) => {
+                let snippet: String = text.chars().take(300).collect();
+                Err(Error::Api {
+                    code: 0,
+                    message: format!("unexpected response: {snippet}"),
+                })
+            }
+        }
     }
 
     pub fn article(&self, id: i64) -> Result<ParsedArticle, Error> {

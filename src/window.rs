@@ -517,6 +517,7 @@ impl Window {
             if let Some(obj) = obj_weak.upgrade() {
                 if return_to_list {
                     obj.imp().content_nav.pop();
+                    obj.imp().sections.borrow()[section_index].restore_scroll();
                 }
                 obj.mutate(
                     section_index,
@@ -640,6 +641,12 @@ impl Window {
                     obj.delete_active();
                     glib::Propagation::Stop
                 }
+                (Some("b"), false) => {
+                    if let Some((_, _, bookmark)) = obj.active_bookmark() {
+                        obj.open_in_browser(&bookmark);
+                    }
+                    glib::Propagation::Stop
+                }
                 (Some("question"), true) => {
                     obj.show_shortcuts();
                     glib::Propagation::Stop
@@ -654,21 +661,6 @@ impl Window {
             }
         });
         self.add_controller(controller);
-    }
-
-    fn run_reader_menu_action(&self, name: &str) {
-        let imp = self.imp();
-        let Some(current) = imp.reader_current.borrow().clone() else {
-            return;
-        };
-        let (_, _, bookmark) = current;
-        match name {
-            "toggle-like" => self.toggle_like(),
-            "toggle-archive" => self.toggle_archive(),
-            "open-bookmark" => self.open_in_browser(&bookmark),
-            "delete-bookmark" => self.delete_active(),
-            _ => {}
-        }
     }
 
     fn switch_to_section(&self, index: usize) -> glib::Propagation {
@@ -721,10 +713,7 @@ impl Window {
         });
         reader
             .like_button
-            .set_tooltip_text(Some(if liked { "Unlike" } else { "Like" }));
-        reader
-            .like_label
-            .set_text(if liked { "Unlike" } else { "Like" });
+            .set_tooltip_text(Some(if liked { "Unlike (l)" } else { "Like (l)" }));
     }
 
     fn toggle_like(&self) {
@@ -755,6 +744,7 @@ impl Window {
             );
             if in_reader {
                 self.imp().content_nav.pop();
+                self.imp().sections.borrow()[section_index].restore_scroll();
             }
         } else {
             self.mutate(
@@ -806,6 +796,7 @@ impl Window {
         }
         if self.reader_visible() {
             self.imp().content_nav.pop();
+            self.imp().sections.borrow()[section_index].restore_scroll();
         }
     }
 
@@ -829,19 +820,11 @@ impl Window {
         } else {
             &["oi-heart"][..]
         });
-        reader
-            .like_button
-            .set_tooltip_text(Some(if bookmark.liked { "Unlike" } else { "Like" }));
-        reader
-            .like_label
-            .set_text(if bookmark.liked { "Unlike" } else { "Like" });
-        reader
-            .archive_label
-            .set_text(if section_from_index(section_index) == Section::Archive {
-                "Move to home"
-            } else {
-                "Archive"
-            });
+        reader.like_button.set_tooltip_text(Some(if bookmark.liked {
+            "Unlike (l)"
+        } else {
+            "Like (l)"
+        }));
         reader.archive_icon.set_icon_name(Some(
             if section_from_index(section_index) == Section::Archive {
                 "edit-undo-symbolic"
@@ -851,11 +834,12 @@ impl Window {
         ));
         reader.archive_button.set_tooltip_text(Some(
             if section_from_index(section_index) == Section::Archive {
-                "Move to home"
+                "Move to home (y)"
             } else {
-                "Archive"
+                "Archive (y)"
             },
         ));
+        imp.sections.borrow()[section_index].save_anchor();
         *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
 
         if is_video(bookmark.url.as_deref()) {
@@ -1094,70 +1078,15 @@ impl Window {
         stack.add_named(&error, Some("error"));
         stack.add_named(&external, Some("external"));
 
-        let like_label = gtk::Label::builder()
-            .label("Like")
-            .halign(gtk::Align::Start)
-            .xalign(0.0)
-            .hexpand(true)
-            .build();
-        let like_box = gtk::Box::builder().spacing(12).build();
-        like_box.append(&like_label);
-        like_box.append(&adw::ShortcutLabel::new("l"));
-        let like_button = gtk::Button::builder()
-            .child(&like_box)
-            .css_classes(["flat"])
-            .build();
-        let like_window = self.downgrade();
-        like_button.connect_clicked(move |_| {
-            if let Some(obj) = like_window.upgrade() {
-                obj.run_reader_menu_action("toggle-like");
-            }
-        });
-
-        let archive_label = gtk::Label::builder()
-            .label("Archive")
-            .halign(gtk::Align::Start)
-            .xalign(0.0)
-            .hexpand(true)
-            .build();
-        let archive_box = gtk::Box::builder().spacing(12).build();
-        archive_box.append(&archive_label);
-        archive_box.append(&adw::ShortcutLabel::new("y"));
-        let archive_button = gtk::Button::builder()
-            .child(&archive_box)
-            .css_classes(["flat"])
-            .build();
-        let archive_window = self.downgrade();
-        archive_button.connect_clicked(move |_| {
-            if let Some(obj) = archive_window.upgrade() {
-                obj.run_reader_menu_action("toggle-archive");
-            }
-        });
-
-        let open_button = menu_item("Open in browser", None);
-        let open_window = self.downgrade();
-        open_button.connect_clicked(move |_| {
-            if let Some(obj) = open_window.upgrade() {
-                obj.run_reader_menu_action("open-bookmark");
-            }
-        });
-
-        let delete_button = menu_item("Delete…", Some("BackSpace"));
-        let delete_window = self.downgrade();
-        delete_button.connect_clicked(move |_| {
-            if let Some(obj) = delete_window.upgrade() {
-                obj.run_reader_menu_action("delete-bookmark");
-            }
-        });
-
         let like_icon = gtk::Image::builder()
-            .icon_name("oceans-ink-heart-outline-symbolic")
+            .icon_name("oceans-ink-heart-filled-symbolic")
+            .css_classes(["oi-heart"])
             .visible(false)
             .build();
         let header_like_button = gtk::Button::builder()
             .child(&like_icon)
-            .css_classes(["flat"])
-            .tooltip_text("Like")
+            .css_classes(["flat", "cursor-pointer"])
+            .tooltip_text("Like (l)")
             .build();
         header_like_button.set_cursor_from_name(Some("pointer"));
         let header_like_window = self.downgrade();
@@ -1172,8 +1101,8 @@ impl Window {
             .build();
         let header_archive_button = gtk::Button::builder()
             .child(&archive_icon)
-            .css_classes(["flat"])
-            .tooltip_text("Archive")
+            .css_classes(["flat", "cursor-pointer"])
+            .tooltip_text("Archive (y)")
             .build();
         header_archive_button.set_cursor_from_name(Some("pointer"));
         let header_archive_window = self.downgrade();
@@ -1183,28 +1112,50 @@ impl Window {
             }
         });
 
-        let menu_items = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .margin_top(6)
-            .margin_bottom(6)
+        let delete_icon = gtk::Image::builder()
+            .icon_name("user-trash-symbolic")
             .build();
-        menu_items.append(&like_button);
-        menu_items.append(&archive_button);
-        menu_items.append(&open_button);
-        menu_items.append(&delete_button);
+        let header_delete_button = gtk::Button::builder()
+            .child(&delete_icon)
+            .css_classes(["flat", "cursor-pointer"])
+            .tooltip_text("Delete (Backspace)")
+            .build();
+        header_delete_button.set_cursor_from_name(Some("pointer"));
+        let header_delete_window = self.downgrade();
+        header_delete_button.connect_clicked(move |_| {
+            if let Some(obj) = header_delete_window.upgrade() {
+                obj.delete_active();
+            }
+        });
 
-        let popover = gtk::Popover::builder()
-            .css_classes(["menu"])
-            .child(&menu_items)
+        let open_icon = gtk::Image::builder()
+            .icon_name("oceans-ink-globe-symbolic")
             .build();
-        let menu_button = gtk::MenuButton::builder()
-            .icon_name("open-menu-symbolic")
-            .popover(&popover)
-            .tooltip_text("Article actions")
+        let header_open_button = gtk::Button::builder()
+            .child(&open_icon)
+            .css_classes(["flat", "cursor-pointer"])
+            .tooltip_text("Open in browser (b)")
             .build();
-        header.pack_end(&menu_button);
-        header.pack_end(&header_like_button);
+        header_open_button.set_cursor_from_name(Some("pointer"));
+        let header_open_window = self.downgrade();
+        header_open_button.connect_clicked(move |_| {
+            if let Some(obj) = header_open_window.upgrade() {
+                let url = obj
+                    .imp()
+                    .reader_current
+                    .borrow()
+                    .clone()
+                    .and_then(|(_, _, bookmark)| bookmark.url);
+                if let Some(url) = url {
+                    obj.open_uri(url);
+                }
+            }
+        });
+
+        header.pack_end(&header_delete_button);
         header.pack_end(&header_archive_button);
+        header.pack_end(&header_like_button);
+        header.pack_end(&header_open_button);
 
         let toolbar = adw::ToolbarView::new();
         toolbar.add_top_bar(&header);
@@ -1226,10 +1177,10 @@ impl Window {
             like_icon,
             archive_button: header_archive_button,
             archive_icon,
+            delete_button: header_delete_button,
+            open_button: header_open_button,
             external_heading,
             external_thumb,
-            like_label,
-            archive_label,
             external_button,
         };
         *self.imp().reader.borrow_mut() = Some(widgets.clone());
@@ -1362,6 +1313,9 @@ pub(crate) struct SectionView {
     section: Section,
     stack: gtk::Stack,
     list: gtk::ListBox,
+    scroller: gtk::ScrolledWindow,
+    anchored_id: std::cell::Cell<Option<i64>>,
+    anchored_index: std::cell::Cell<usize>,
     error_page: adw::StatusPage,
     bookmarks: std::rc::Rc<std::cell::RefCell<Vec<Bookmark>>>,
     icons: std::rc::Rc<std::cell::RefCell<Vec<gtk::Image>>>,
@@ -1373,6 +1327,9 @@ impl Clone for SectionView {
             section: self.section,
             stack: self.stack.clone(),
             list: self.list.clone(),
+            scroller: self.scroller.clone(),
+            anchored_id: self.anchored_id.clone(),
+            anchored_index: self.anchored_index.clone(),
             error_page: self.error_page.clone(),
             bookmarks: self.bookmarks.clone(),
             icons: self.icons.clone(),
@@ -1469,6 +1426,9 @@ impl SectionView {
             section: section_from_index(index),
             stack,
             list,
+            scroller: scrolled.clone(),
+            anchored_id: std::cell::Cell::new(None),
+            anchored_index: std::cell::Cell::new(0),
             error_page,
             bookmarks: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
             icons: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
@@ -1477,6 +1437,49 @@ impl SectionView {
 
     fn stack(&self) -> &gtk::Stack {
         &self.stack
+    }
+
+    fn save_anchor(&self) {
+        let value = self.scroller.vadjustment().value();
+        let anchored_index = self
+            .list
+            .row_at_y(value as i32)
+            .map(|row| row.index() as usize);
+        self.anchored_index.set(anchored_index.unwrap_or(0));
+        self.anchored_id
+            .set(anchored_index.and_then(|index| self.bookmarks.borrow().get(index).map(|b| b.id)));
+    }
+
+    fn restore_scroll(&self) {
+        let target = self.anchor_offset();
+        let adjustment = self.scroller.vadjustment();
+        glib::idle_add_local_once({
+            let adjustment = adjustment.clone();
+            move || adjustment.set_value(target)
+        });
+        glib::timeout_add_local_once(std::time::Duration::from_millis(350), move || {
+            adjustment.set_value(target)
+        });
+    }
+
+    fn anchor_offset(&self) -> f64 {
+        let bookmarks = self.bookmarks.borrow();
+        let target_index = self
+            .anchored_id
+            .get()
+            .and_then(|id| bookmarks.iter().position(|bookmark| bookmark.id == id))
+            .unwrap_or_else(|| {
+                self.anchored_index
+                    .get()
+                    .min(bookmarks.len().saturating_sub(1))
+            });
+        let Some(row) = self.list.row_at_index(target_index as i32) else {
+            return 0.0;
+        };
+        let Some(bounds) = row.compute_bounds(&self.list) else {
+            return 0.0;
+        };
+        bounds.y().max(0.0) as f64
     }
 
     fn clone_view(&self) -> Self {
@@ -1628,10 +1631,11 @@ pub(crate) struct ReaderWidgets {
     pub like_icon: gtk::Image,
     pub archive_button: gtk::Button,
     pub archive_icon: gtk::Image,
+    pub delete_button: gtk::Button,
+    pub open_button: gtk::Button,
     pub external_heading: gtk::Label,
     pub external_thumb: gtk::Picture,
-    pub like_label: gtk::Label,
-    pub archive_label: gtk::Label,
+
     pub external_button: gtk::Button,
 }
 
@@ -1646,10 +1650,11 @@ impl Clone for ReaderWidgets {
             like_icon: self.like_icon.clone(),
             archive_button: self.archive_button.clone(),
             archive_icon: self.archive_icon.clone(),
+            delete_button: self.delete_button.clone(),
+            open_button: self.open_button.clone(),
             external_heading: self.external_heading.clone(),
             external_thumb: self.external_thumb.clone(),
-            like_label: self.like_label.clone(),
-            archive_label: self.archive_label.clone(),
+
             external_button: self.external_button.clone(),
         }
     }

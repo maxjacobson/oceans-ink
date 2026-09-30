@@ -5,6 +5,7 @@
   </gresource>
   <gresource prefix="/net/hardscrabble/oceans-ink/icons/scalable/actions/">
     <file compressed="true" preprocess="xml-stripblanks" alias="oceans-ink-heart-filled-symbolic.svg">../../data/icons/hicolor/scalable/actions/oceans-ink-heart-filled-symbolic.svg</file>
+    <file compressed="true" preprocess="xml-stripblanks" alias="oceans-ink-globe-symbolic.svg">../../data/icons/hicolor/scalable/actions/oceans-ink-globe-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks" alias="oceans-ink-archive-symbolic.svg">../../data/icons/hicolor/scalable/actions/oceans-ink-archive-symbolic.svg</file>
   </gresource>
 </gresources>
