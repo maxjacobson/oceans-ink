@@ -80,12 +80,16 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
 - Lists show row thumbnails (cached to disk, see below) and red hearts on
   liked rows (hidden in the Liked list where it is implied)
 - Click a row to drill into the in-app reader; context menu and keyboard
-  shortcuts: j/k move, Enter open, l like/unlike, y archive/unarchive,
+  shortcuts: j/k move (also j/k next/prev article while in the reader),
+  Enter open, l like/unlike, y archive/unarchive,
   Backspace delete (confirm dialog), b open in browser,
   Ctrl+1/2/3 switch sections, Ctrl+? shortcuts, Ctrl+Q quit
 - Toasts with Undo buttons for like/unlike/archive/move-to-home
 - Scroll position is anchored to the topmost visible bookmark when
   drilling in, so returning (even after delete/archive) lands in place
+- Deleting from the reader advances to the next bookmark in the list
+  instead of popping back; pops only after deleting the last one
+  (archive/unlike from the reader still pop back to the list)
 - Thumbnail cache: src/thumbnail_cache.rs, files under the app cache dir
   named by URL SHA-256, atomically-written index.json with cached_at
   timestamps, pruned on startup past a 30-day cutoff (constant in the

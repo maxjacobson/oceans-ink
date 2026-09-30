@@ -665,6 +665,14 @@ impl Window {
                     obj.imp().sections.borrow()[index].move_selection(-1);
                     glib::Propagation::Stop
                 }
+                (Some("j"), false) if tag == Some("reader") => {
+                    obj.reader_move(1);
+                    glib::Propagation::Stop
+                }
+                (Some("k"), false) if tag == Some("reader") => {
+                    obj.reader_move(-1);
+                    glib::Propagation::Stop
+                }
                 (Some("1"), true) => obj.switch_to_section(0),
                 (Some("2"), true) => obj.switch_to_section(1),
                 (Some("3"), true) => obj.switch_to_section(2),
@@ -865,7 +873,23 @@ impl Window {
     }
 
     fn advance_reader(&self, section_index: usize, row_index: usize, bookmark: &Bookmark) {
+        self.imp().sections.borrow()[section_index].select_index(row_index);
         self.show_in_reader(section_index, row_index, bookmark, false);
+    }
+
+    fn reader_move(&self, delta: i32) {
+        let Some((section_index, row_index, _)) = self.imp().reader_current.borrow().clone() else {
+            return;
+        };
+        let target = row_index as isize + delta as isize;
+        if target < 0 {
+            return;
+        }
+        let view = self.imp().sections.borrow()[section_index].clone_view();
+        let Some(bookmark) = view.bookmark_at(target as usize) else {
+            return;
+        };
+        self.advance_reader(section_index, target as usize, &bookmark);
     }
 
     fn show_in_reader(
@@ -1679,6 +1703,12 @@ impl SectionView {
 
     fn selected_index(&self) -> Option<usize> {
         self.list.selected_row().map(|row| row.index() as usize)
+    }
+
+    fn select_index(&self, index: usize) {
+        if let Some(row) = self.list.row_at_index(index as i32) {
+            self.list.select_row(Some(&row));
+        }
     }
 
     fn move_selection(&self, delta: i32) {

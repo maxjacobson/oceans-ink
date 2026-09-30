@@ -289,5 +289,22 @@
         </child>
       </object>
     </child>
+    <child>
+      <object class="AdwShortcutsSection">
+        <property name="title" translatable="no">Reader</property>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Next article</property>
+            <property name="accelerator">j</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Previous article</property>
+            <property name="accelerator">k</property>
+          </object>
+        </child>
+      </object>
+    </child>
   </object>
 </interface>
