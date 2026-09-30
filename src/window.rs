@@ -272,10 +272,9 @@ impl Window {
             .application_name("Oceans Ink")
             .application_icon("net.hardscrabble.oceans-ink")
             .version(env!("CARGO_PKG_VERSION"))
-            .developer_name("Max Jacobson")
+            .developer_name("Maxwell")
             .website("https://github.com/maxjacobson/oceans-ink")
-            .license_type(gtk::License::MitX11)
-            .comments("Unofficial Instapaper client for GNOME. Vibecoded, just for fun.")
+            .comments("An unofficial Instapaper client for GNOME, vibecoded just for fun.")
             .build()
             .present(Some(self));
     }
