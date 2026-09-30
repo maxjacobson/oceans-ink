@@ -1314,7 +1314,7 @@ impl Window {
         });
         let external_heading = gtk::Label::builder()
             .wrap(true)
-            .xalign(0.5)
+            .xalign(0.0)
             .css_classes(["title-2"])
             .margin_top(16)
             .build();
@@ -1325,11 +1325,13 @@ impl Window {
             .build();
         let external_date = gtk::Label::builder()
             .css_classes(["dim-label"])
+            .xalign(0.0)
             .visible(false)
             .build();
         let external_note = gtk::Label::builder()
             .label("This is a video")
             .css_classes(["dim-label"])
+            .xalign(0.0)
             .wrap(true)
             .build();
         let thumb_button = gtk::Button::builder()
@@ -1356,6 +1358,8 @@ impl Window {
             .orientation(gtk::Orientation::Vertical)
             .valign(gtk::Align::Center)
             .spacing(12)
+            .margin_start(24)
+            .margin_end(24)
             .build();
         external.append(&external_heading);
         external.append(&external_date);
