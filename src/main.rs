@@ -46,9 +46,15 @@ fn main() -> glib::ExitCode {
 
     app.connect_startup(|_| {
         register_resources();
+
+        let css = gtk::CssProvider::new();
+        css.load_from_string("popover.menu button { font-weight: normal; }");
         if let Some(display) = gtk::gdk::Display::default() {
-            gtk::IconTheme::for_display(&display)
-                .add_resource_path("/net/hardscrabble/oceans-ink/icons");
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &css,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
         }
     });
 
@@ -63,6 +69,10 @@ fn main() -> glib::ExitCode {
     app.set_accels_for_action("app.quit", &["<Ctrl>q"]);
 
     app.connect_activate(|app| {
+        if let Some(existing) = app.active_window() {
+            existing.present();
+            return;
+        }
         window::Window::new(app).present();
     });
 

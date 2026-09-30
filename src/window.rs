@@ -85,6 +85,12 @@ mod imp {
                 move |_| obj.save_token_clicked()
             ));
 
+            self.token_entry.connect_activate(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.save_token_clicked()
+            ));
+
             self.sections_list.connect_row_activated(glib::clone!(
                 #[weak]
                 obj,
@@ -93,6 +99,13 @@ mod imp {
 
             obj.setup_actions();
             obj.setup_key_navigation();
+
+            obj.connect_realize(|_| {
+                if let Some(display) = gtk::gdk::Display::default() {
+                    let theme = gtk::IconTheme::for_display(&display);
+                    theme.add_resource_path("/net/hardscrabble/oceans-ink/icons");
+                }
+            });
 
             glib::spawn_future_local(glib::clone!(
                 #[weak]
@@ -349,9 +362,7 @@ impl Window {
     }
 
     fn open_in_browser(&self, bookmark: &Bookmark) {
-        let Some(url) = bookmark.url.clone() else {
-            return;
-        };
+        let url = bookmark.reader_url();
         let launcher = gtk::UriLauncher::new(&url);
         glib::spawn_future_local(glib::clone!(
             #[weak(rename_to = obj)]
@@ -447,6 +458,28 @@ impl Window {
                 (Some("1"), true) => obj.switch_to_section(0),
                 (Some("2"), true) => obj.switch_to_section(1),
                 (Some("3"), true) => obj.switch_to_section(2),
+                (Some("l"), false) => {
+                    obj.toggle_like();
+                    glib::Propagation::Stop
+                }
+                (Some("y"), false) => {
+                    obj.toggle_archive();
+                    glib::Propagation::Stop
+                }
+                (Some("BackSpace"), _) => {
+                    obj.delete_active();
+                    glib::Propagation::Stop
+                }
+                (Some("question"), true) => {
+                    obj.show_shortcuts();
+                    glib::Propagation::Stop
+                }
+                (Some("q"), true) => {
+                    if let Some(app) = obj.application() {
+                        app.quit();
+                    }
+                    glib::Propagation::Stop
+                }
                 _ => glib::Propagation::Proceed,
             }
         });
@@ -458,6 +491,67 @@ impl Window {
             self.select_section(index);
         }
         glib::Propagation::Stop
+    }
+
+    fn selected_bookmark(&self) -> Option<(usize, usize, Bookmark)> {
+        let imp = self.imp();
+        let section_index = imp.current_section.get();
+        let view = &imp.sections.borrow()[section_index];
+        let row_index = view.selected_index()?;
+        let bookmark = view.bookmark_at(row_index)?;
+        Some((section_index, row_index, bookmark))
+    }
+
+    fn toggle_like(&self) {
+        let Some((section_index, row_index, bookmark)) = self.selected_bookmark() else {
+            return;
+        };
+        let id = bookmark.id;
+        let liked = !bookmark.liked;
+        if !liked && section_from_index(section_index) == Section::Liked {
+            self.mutate(
+                section_index,
+                row_index,
+                Mutation::RemoveRow,
+                move |client| client.set_liked(id, false),
+            );
+        } else {
+            self.mutate(
+                section_index,
+                row_index,
+                Mutation::SetLiked(liked),
+                move |client| client.set_liked(id, liked),
+            );
+        }
+    }
+
+    fn toggle_archive(&self) {
+        let Some((section_index, row_index, bookmark)) = self.selected_bookmark() else {
+            return;
+        };
+        let id = bookmark.id;
+        if section_from_index(section_index) == Section::Archive {
+            self.mutate(
+                section_index,
+                row_index,
+                Mutation::RemoveRow,
+                move |client| client.unarchive(id),
+            );
+        } else {
+            self.mutate(
+                section_index,
+                row_index,
+                Mutation::RemoveRow,
+                move |client| client.archive(id),
+            );
+        }
+    }
+
+    fn delete_active(&self) {
+        let Some((section_index, row_index, bookmark)) = self.selected_bookmark() else {
+            return;
+        };
+        self.confirm_delete(section_index, row_index, bookmark.id);
     }
 
     fn show_bookmark_menu(
@@ -473,24 +567,92 @@ impl Window {
             return;
         };
 
-        let menu = gtk::gio::Menu::new();
-        menu.append(Some("Open in browser"), Some("win.open-bookmark"));
+        let popover = gtk::Popover::builder().css_classes(["menu"]).build();
+        let items = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .margin_top(6)
+            .margin_bottom(6)
+            .build();
 
-        if bookmark.liked {
-            menu.append(Some("Unlike"), Some("win.unlike-bookmark"));
+        let add_item = |label: &str| -> gtk::Button {
+            let text = gtk::Label::builder()
+                .label(label)
+                .halign(gtk::Align::Start)
+                .xalign(0.0)
+                .build();
+            let button = gtk::Button::builder()
+                .child(&text)
+                .css_classes(["flat"])
+                .build();
+            items.append(&button);
+            button
+        };
+
+        let open_item = add_item("Open in browser");
+        let open_window = self.downgrade();
+        let open_popover = popover.downgrade();
+        open_item.connect_clicked(move |_| {
+            if let Some(p) = open_popover.upgrade() {
+                p.popdown();
+            }
+            if let Some(obj) = open_window.upgrade() {
+                obj.run_bookmark_action("open-bookmark");
+            }
+        });
+        items.append(&open_item);
+
+        let like_item = add_item(if bookmark.liked { "Unlike" } else { "Like" });
+        let like_window = self.downgrade();
+        let like_popover = popover.downgrade();
+        like_item.connect_clicked(move |_| {
+            if let Some(p) = like_popover.upgrade() {
+                p.popdown();
+            }
+            if let Some(obj) = like_window.upgrade() {
+                obj.run_bookmark_action(if bookmark.liked {
+                    "unlike-bookmark"
+                } else {
+                    "like-bookmark"
+                });
+            }
+        });
+        items.append(&like_item);
+
+        let archive_item = add_item(if section_from_index(section_index) == Section::Archive {
+            "Move to home"
         } else {
-            menu.append(Some("Like"), Some("win.like-bookmark"));
-        }
+            "Archive"
+        });
+        let archive_window = self.downgrade();
+        let archive_popover = popover.downgrade();
+        archive_item.connect_clicked(move |_| {
+            if let Some(p) = archive_popover.upgrade() {
+                p.popdown();
+            }
+            if let Some(obj) = archive_window.upgrade() {
+                obj.run_bookmark_action(if section_from_index(section_index) == Section::Archive {
+                    "unarchive-bookmark"
+                } else {
+                    "archive-bookmark"
+                });
+            }
+        });
+        items.append(&archive_item);
 
-        if section_from_index(section_index) == Section::Archive {
-            menu.append(Some("Move to home"), Some("win.unarchive-bookmark"));
-        } else {
-            menu.append(Some("Archive"), Some("win.archive-bookmark"));
-        }
+        let delete_item = add_item("Delete…");
+        let delete_window = self.downgrade();
+        let delete_popover = popover.downgrade();
+        delete_item.connect_clicked(move |_| {
+            if let Some(p) = delete_popover.upgrade() {
+                p.popdown();
+            }
+            if let Some(obj) = delete_window.upgrade() {
+                obj.run_bookmark_action("delete-bookmark");
+            }
+        });
+        items.append(&delete_item);
 
-        menu.append(Some("Delete…"), Some("win.delete-bookmark"));
-
-        let popover = gtk::PopoverMenu::from_model(Some(&menu));
+        popover.set_child(Some(&items));
         popover.set_parent(list);
         popover.connect_closed(|popover| popover.unparent());
         popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
@@ -597,7 +759,10 @@ impl SectionView {
         gesture.set_button(3);
         let gesture_list = list.clone();
         let gesture_window = window.clone();
-        gesture.connect_pressed(move |gesture, _, x, y| {
+        gesture.connect_pressed(move |gesture, _, _, _| {
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        });
+        gesture.connect_released(move |_, _, x, y| {
             let Some(window) = gesture_window.upgrade() else {
                 return;
             };
@@ -606,9 +771,10 @@ impl SectionView {
             };
             let section_index = window.imp().current_section.get();
             let row_index = row.index() as usize;
+            gesture_list.select_row(Some(&row));
+            row.grab_focus();
             window.imp().pending.set(Some((section_index, row_index)));
             window.show_bookmark_menu(&gesture_list, x, y, section_index, row_index);
-            gesture.set_state(gtk::EventSequenceState::Claimed);
         });
         list.add_controller(gesture);
 
@@ -691,6 +857,10 @@ impl SectionView {
             icon.set_icon_name(Some("oceans-ink-heart-filled-symbolic"));
             icon.set_visible(liked);
         }
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        self.list.selected_row().map(|row| row.index() as usize)
     }
 
     fn move_selection(&self, delta: i32) {

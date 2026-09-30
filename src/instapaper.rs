@@ -30,6 +30,10 @@ pub struct Bookmark {
 }
 
 impl Bookmark {
+    pub fn reader_url(&self) -> String {
+        format!("https://instapaper.com/read/{}", self.id)
+    }
+
     pub fn display_title(&self) -> String {
         self.title
             .clone()
@@ -215,6 +219,22 @@ mod tests {
         let json = r#"{ "error": { "code": 401, "message": "Authentication failed" } }"#;
         let body: ApiErrorBody = serde_json::from_str(json).expect("should parse");
         assert_eq!(body.error.message, "Authentication failed");
+    }
+
+    #[test]
+    fn reader_url_uses_bookmark_id() {
+        let bookmark = Bookmark {
+            id: 2045166304,
+            url: Some("https://example.com/a".to_string()),
+            title: Some("An Article".to_string()),
+            description: None,
+            liked: false,
+            archived: false,
+        };
+        assert_eq!(
+            bookmark.reader_url(),
+            "https://instapaper.com/read/2045166304"
+        );
     }
 
     #[test]

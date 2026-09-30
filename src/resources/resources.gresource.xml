@@ -3,7 +3,7 @@
   <gresource prefix="/net/hardscrabble/oceans-ink/">
     <file compressed="true" preprocess="xml-stripblanks">ui/window.ui</file>
   </gresource>
-  <gresource prefix="/net/hardscrabble/oceans-ink/icons/hicolor/scalable/actions/">
+  <gresource prefix="/net/hardscrabble/oceans-ink/icons/scalable/actions/">
     <file compressed="true" preprocess="xml-stripblanks" alias="oceans-ink-heart-filled-symbolic.svg">../../data/icons/hicolor/scalable/actions/oceans-ink-heart-filled-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks" alias="oceans-ink-archive-symbolic.svg">../../data/icons/hicolor/scalable/actions/oceans-ink-archive-symbolic.svg</file>
   </gresource>

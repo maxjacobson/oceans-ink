@@ -206,8 +206,26 @@
         </child>
         <child>
           <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Like or unlike the selected article</property>
+            <property name="accelerator">l</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Archive or unarchive the selected article</property>
+            <property name="accelerator">y</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="no">Delete the selected article</property>
+            <property name="accelerator">BackSpace</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
             <property name="title" translatable="no">Keyboard Shortcuts</property>
-            <property name="action-name">win.keyboard-shortcuts</property>
+            <property name="accelerator">&lt;Ctrl&gt;question</property>
           </object>
         </child>
         <child>
@@ -231,7 +249,7 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="no">Quit</property>
-            <property name="action-name">app.quit</property>
+            <property name="accelerator">&lt;Ctrl&gt;q</property>
           </object>
         </child>
       </object>
