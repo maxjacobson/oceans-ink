@@ -13,6 +13,7 @@
     "--share=network",
     "--socket=fallback-x11",
     "--socket=wayland",
+    "--socket=pulseaudio",
     "--filesystem=xdg-run/keyring"
   ],
   "build-options": {
