@@ -1277,7 +1277,9 @@ impl Window {
             else {
                 return false;
             };
-            let mut action = navigation.navigation_action().unwrap();
+            let Some(mut action) = navigation.navigation_action() else {
+                return false;
+            };
             let Some(request) = action.request() else {
                 return false;
             };
@@ -2186,6 +2188,7 @@ fn host_of(url: Option<&str>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::{format_count, is_video};
 

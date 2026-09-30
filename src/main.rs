@@ -9,6 +9,7 @@ use gtk::glib;
 
 const APP_ID: &str = "net.hardscrabble.oceans-ink";
 
+#[allow(clippy::panic)]
 fn register_resources() {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
