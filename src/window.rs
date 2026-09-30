@@ -1115,6 +1115,13 @@ impl Window {
 
         if is_video(bookmark.url.as_deref()) {
             reader.external_heading.set_text(&bookmark.display_title());
+            match bookmark.added_date() {
+                Some(date) => {
+                    reader.external_date.set_text(&format!("Added {date}"));
+                    reader.external_date.set_visible(true);
+                }
+                None => reader.external_date.set_visible(false),
+            }
             reader.external_thumb.set_visible(false);
             reader.stack.set_visible_child_name("external");
             if push {
@@ -1316,8 +1323,12 @@ impl Window {
             .hexpand(true)
             .visible(false)
             .build();
+        let external_date = gtk::Label::builder()
+            .css_classes(["dim-label"])
+            .visible(false)
+            .build();
         let external_note = gtk::Label::builder()
-            .label("This article is a video. Watch it in your browser instead.")
+            .label("This is a video")
             .css_classes(["dim-label"])
             .wrap(true)
             .build();
@@ -1347,6 +1358,7 @@ impl Window {
             .spacing(12)
             .build();
         external.append(&external_heading);
+        external.append(&external_date);
         external.append(&thumb_button);
         external.append(&external_note);
         external.append(&external_button);
@@ -1463,6 +1475,7 @@ impl Window {
             open_button: header_open_button,
             external_heading,
             external_thumb,
+            external_date,
             external_button,
         };
         *self.imp().reader.borrow_mut() = Some(widgets.clone());
@@ -1989,6 +2002,7 @@ pub(crate) struct ReaderWidgets {
     pub open_button: gtk::Button,
     pub external_heading: gtk::Label,
     pub external_thumb: gtk::Picture,
+    pub external_date: gtk::Label,
 
     pub external_button: gtk::Button,
 }
@@ -2008,6 +2022,7 @@ impl Clone for ReaderWidgets {
             open_button: self.open_button.clone(),
             external_heading: self.external_heading.clone(),
             external_thumb: self.external_thumb.clone(),
+            external_date: self.external_date.clone(),
 
             external_button: self.external_button.clone(),
         }
