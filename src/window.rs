@@ -36,6 +36,18 @@ mod imp {
         pub shortcuts_dialog: TemplateChild<adw::ShortcutsDialog>,
         #[template_child]
         pub content_nav: TemplateChild<adw::NavigationView>,
+        #[template_child]
+        pub page_controls: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub page_first: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub page_prev: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub page_label: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub page_next: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub page_last: TemplateChild<gtk::Button>,
         pub(crate) reader: RefCell<Option<ReaderWidgets>>,
         pub(crate) reader_current: RefCell<Option<(usize, usize, Bookmark)>>,
         pub thumbnails: std::sync::Arc<crate::thumbnail_cache::ThumbnailCache>,
@@ -62,6 +74,12 @@ mod imp {
                 content_title: TemplateChild::default(),
                 shortcuts_dialog: TemplateChild::default(),
                 content_nav: TemplateChild::default(),
+                page_controls: TemplateChild::default(),
+                page_first: TemplateChild::default(),
+                page_prev: TemplateChild::default(),
+                page_label: TemplateChild::default(),
+                page_next: TemplateChild::default(),
+                page_last: TemplateChild::default(),
                 reader: RefCell::new(None),
                 reader_current: RefCell::new(None),
                 thumbnails: std::sync::Arc::new(crate::thumbnail_cache::ThumbnailCache::open()),
@@ -121,6 +139,27 @@ mod imp {
                 #[weak]
                 obj,
                 move |_, row| obj.select_section(row.index() as usize)
+            ));
+
+            self.page_first.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.go_first_page()
+            ));
+            self.page_prev.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.go_prev_page()
+            ));
+            self.page_next.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.go_next_page()
+            ));
+            self.page_last.connect_clicked(glib::clone!(
+                #[weak]
+                obj,
+                move |_| obj.go_last_page()
             ));
 
             obj.setup_actions();
@@ -254,6 +293,55 @@ impl Window {
         imp.lists_stack
             .set_visible_child_name(section_from_index(index).query_value());
         self.load_section(index);
+        self.update_page_controls();
+    }
+
+    fn current_view(&self) -> SectionView {
+        let imp = self.imp();
+        imp.sections.borrow()[imp.current_section.get()].clone_view()
+    }
+
+    fn update_page_controls(&self) {
+        let imp = self.imp();
+        let view = self.current_view();
+        let page = view.page();
+        let pages = view.page_count();
+        imp.page_controls.set_visible(pages > 1);
+        imp.page_label
+            .set_text(&format!("{} / {}", page + 1, pages));
+        imp.page_first.set_sensitive(page > 0);
+        imp.page_prev.set_sensitive(page > 0);
+        imp.page_next.set_sensitive(page + 1 < pages);
+        imp.page_last.set_sensitive(page + 1 < pages);
+    }
+
+    fn go_first_page(&self) {
+        self.go_to_page(0);
+    }
+
+    fn go_prev_page(&self) {
+        let page = self.current_view().page();
+        self.go_to_page(page.saturating_sub(1));
+    }
+
+    fn go_next_page(&self) {
+        let page = self.current_view().page();
+        self.go_to_page(page + 1);
+    }
+
+    fn go_last_page(&self) {
+        let pages = self.current_view().page_count();
+        self.go_to_page(pages.saturating_sub(1));
+    }
+
+    fn go_to_page(&self, page: u64) {
+        let view = self.current_view();
+        let clamped = page.min(view.page_count().saturating_sub(1));
+        if clamped != view.page() {
+            view.set_page(clamped);
+            view.scroll_to_top();
+            self.load_section(self.imp().current_section.get());
+        }
     }
 
     fn load_section(&self, index: usize) {
@@ -262,20 +350,31 @@ impl Window {
             return;
         };
         let view = imp.sections.borrow()[index].clone_view();
+        let offset = crate::instapaper::offset_for_page(view.page());
         view.set_loading();
         let obj_weak = self.downgrade();
         let thumbnails = imp.thumbnails.clone();
 
         let list_client = client.clone();
         glib::spawn_future_local(async move {
-            let result =
-                gtk::gio::spawn_blocking(move || list_client.bookmarks(section_from_index(index)))
-                    .await;
+            let result = gtk::gio::spawn_blocking(move || {
+                list_client.bookmarks(section_from_index(index), offset)
+            })
+            .await;
             if let Some(obj) = obj_weak.upgrade() {
                 match result {
                     Ok(Ok(page)) => {
+                        let last = crate::instapaper::page_count(page.total).saturating_sub(1);
+                        if page.bookmarks.is_empty() && view.page() > last {
+                            view.set_total(page.total);
+                            view.set_page(last);
+                            obj.load_section(index);
+                            return;
+                        }
+                        view.set_total(page.total);
                         view.set_bookmarks(page.bookmarks, (*client).clone(), thumbnails.clone());
                         obj.set_count_label(index, page.total);
+                        obj.update_page_controls();
                     }
                     Ok(Err(error)) => view.set_error(&error.to_string()),
                     Err(_) => view.set_error("The request task failed"),
@@ -314,8 +413,10 @@ impl Window {
                 for (index, count) in counts.iter().flatten() {
                     if let Ok(count) = count {
                         obj.set_count_label(*index, *count);
+                        obj.imp().sections.borrow()[*index].set_total(*count);
                     }
                 }
+                obj.update_page_controls();
             }
         });
     }
@@ -528,20 +629,7 @@ impl Window {
         dialog.connect_response(Some("delete"), move |_, _| {
             if let Some(obj) = obj_weak.upgrade() {
                 let after: Option<AfterMutation> = if return_to_list {
-                    Some(Box::new(move |window, success| {
-                        let view = window.imp().sections.borrow()[section_index].clone_view();
-                        let next = if success {
-                            view.bookmark_at(row_index)
-                        } else {
-                            None
-                        };
-                        if let Some(next) = next {
-                            window.advance_reader(section_index, row_index, &next);
-                            return;
-                        }
-                        window.imp().content_nav.pop();
-                        window.imp().sections.borrow()[section_index].restore_scroll();
-                    }))
+                    Some(advance_reader_after(section_index, row_index))
                 } else {
                     None
                 };
@@ -591,6 +679,13 @@ impl Window {
                 match mutation {
                     Mutation::RemoveRow => view.remove_row(row_index),
                     Mutation::SetLiked(liked) => view.update_liked(row_index, liked),
+                }
+                if removed_row
+                    && view.row_count() == 0
+                    && view.page() > 0
+                    && let Some(obj) = obj_weak_for_counts.upgrade()
+                {
+                    obj.load_section(section_index);
                 }
                 if let (Some(obj), Some(after)) = (obj_weak_for_counts.upgrade(), after) {
                     after(&obj, true);
@@ -906,15 +1001,77 @@ impl Window {
         let Some((section_index, row_index, _)) = self.imp().reader_current.borrow().clone() else {
             return;
         };
+        let view = self.imp().sections.borrow()[section_index].clone_view();
         let target = row_index as isize + delta as isize;
-        if target < 0 {
+        if target >= 0
+            && let Some(bookmark) = view.bookmark_at(target as usize)
+        {
+            self.advance_reader(section_index, target as usize, &bookmark);
             return;
         }
+        if delta > 0 && view.can_next_page() {
+            self.load_page_and_advance_reader(section_index, view.page() + 1, false);
+        } else if delta < 0 && view.can_prev_page() {
+            self.load_page_and_advance_reader(section_index, view.page() - 1, true);
+        }
+    }
+
+    fn reader_advance_or_pop(&self, section_index: usize, row_index: usize) {
         let view = self.imp().sections.borrow()[section_index].clone_view();
-        let Some(bookmark) = view.bookmark_at(target as usize) else {
+        if let Some(bookmark) = view.bookmark_at(row_index) {
+            self.advance_reader(section_index, row_index, &bookmark);
+            return;
+        }
+        if view.can_next_page() {
+            self.load_page_and_advance_reader(section_index, view.page() + 1, false);
+            return;
+        }
+        self.imp().content_nav.pop();
+        view.restore_scroll();
+    }
+
+    fn load_page_and_advance_reader(&self, section_index: usize, page: u64, from_end: bool) {
+        let Some(client) = self.imp().client.get().cloned() else {
             return;
         };
-        self.advance_reader(section_index, target as usize, &bookmark);
+        let view = self.imp().sections.borrow()[section_index].clone_view();
+        let obj_weak = self.downgrade();
+        let thumbnails = self.imp().thumbnails.clone();
+        let list_client = client.clone();
+        glib::spawn_future_local(async move {
+            let result = gtk::gio::spawn_blocking(move || {
+                list_client.bookmarks(
+                    section_from_index(section_index),
+                    crate::instapaper::offset_for_page(page),
+                )
+            })
+            .await;
+            if let Some(obj) = obj_weak.upgrade() {
+                match result {
+                    Ok(Ok(page_data)) if !page_data.bookmarks.is_empty() => {
+                        view.set_total(page_data.total);
+                        view.set_page(page);
+                        view.set_bookmarks(
+                            page_data.bookmarks,
+                            (*client).clone(),
+                            thumbnails.clone(),
+                        );
+                        obj.update_page_controls();
+                        let row = if from_end {
+                            view.row_count().saturating_sub(1)
+                        } else {
+                            0
+                        };
+                        if let Some(bookmark) = view.bookmark_at(row) {
+                            obj.advance_reader(section_index, row, &bookmark);
+                        }
+                    }
+                    _ => {
+                        obj.load_section(section_index);
+                    }
+                }
+            }
+        });
     }
 
     fn show_in_reader(
@@ -1437,18 +1594,12 @@ fn section_from_index(index: usize) -> Section {
 
 fn advance_reader_after(section_index: usize, row_index: usize) -> AfterMutation {
     Box::new(move |window, success| {
-        let view = window.imp().sections.borrow()[section_index].clone_view();
-        let next = if success {
-            view.bookmark_at(row_index)
+        if success {
+            window.reader_advance_or_pop(section_index, row_index);
         } else {
-            None
-        };
-        if let Some(next) = next {
-            window.advance_reader(section_index, row_index, &next);
-            return;
+            window.imp().content_nav.pop();
+            window.imp().sections.borrow()[section_index].restore_scroll();
         }
-        window.imp().content_nav.pop();
-        window.imp().sections.borrow()[section_index].restore_scroll();
     })
 }
 
@@ -1459,6 +1610,8 @@ pub(crate) struct SectionView {
     scroller: gtk::ScrolledWindow,
     anchored_id: std::cell::Cell<Option<i64>>,
     anchored_index: std::cell::Cell<usize>,
+    page: std::cell::Cell<u64>,
+    total: std::cell::Cell<u64>,
     error_page: adw::StatusPage,
     bookmarks: std::rc::Rc<std::cell::RefCell<Vec<Bookmark>>>,
     icons: std::rc::Rc<std::cell::RefCell<Vec<gtk::Image>>>,
@@ -1473,6 +1626,8 @@ impl Clone for SectionView {
             scroller: self.scroller.clone(),
             anchored_id: self.anchored_id.clone(),
             anchored_index: self.anchored_index.clone(),
+            page: self.page.clone(),
+            total: self.total.clone(),
             error_page: self.error_page.clone(),
             bookmarks: self.bookmarks.clone(),
             icons: self.icons.clone(),
@@ -1572,6 +1727,8 @@ impl SectionView {
             scroller: scrolled.clone(),
             anchored_id: std::cell::Cell::new(None),
             anchored_index: std::cell::Cell::new(0),
+            page: std::cell::Cell::new(0),
+            total: std::cell::Cell::new(0),
             error_page,
             bookmarks: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
             icons: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
@@ -1631,6 +1788,35 @@ impl SectionView {
 
     fn set_loading(&self) {
         self.stack.set_visible_child_name("loading");
+    }
+
+    fn page(&self) -> u64 {
+        self.page.get()
+    }
+
+    fn set_page(&self, page: u64) {
+        self.page.set(page);
+    }
+
+    fn set_total(&self, total: u64) {
+        self.total.set(total);
+    }
+
+    fn page_count(&self) -> u64 {
+        crate::instapaper::page_count(self.total.get())
+    }
+
+    fn can_prev_page(&self) -> bool {
+        self.page.get() > 0
+    }
+
+    fn can_next_page(&self) -> bool {
+        self.page.get() + 1 < self.page_count()
+    }
+
+    fn scroll_to_top(&self) {
+        let adjustment = self.scroller.vadjustment();
+        glib::idle_add_local_once(move || adjustment.set_value(0.0));
     }
 
     fn set_error(&self, message: &str) {
@@ -1715,6 +1901,10 @@ impl SectionView {
 
     fn bookmark_at(&self, index: usize) -> Option<Bookmark> {
         self.bookmarks.borrow().get(index).cloned()
+    }
+
+    fn row_count(&self) -> usize {
+        self.bookmarks.borrow().len()
     }
 
     fn remove_row(&self, index: usize) {

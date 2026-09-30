@@ -186,12 +186,48 @@
                                     <property name="title-widget">
                                       <object class="AdwWindowTitle" id="content_title"/>
                                     </property>
+                                    <child type="start">
+                                    <object class="GtkBox" id="page_controls">
+                                    <property name="visible">false</property>
+                                    <property name="spacing">6</property>
+                                    <property name="valign">center</property>
+                                    <child>
+                                    <object class="GtkButton" id="page_first">
+                                    <property name="icon-name">go-first-symbolic</property>
+                                    <property name="tooltip-text" translatable="no">First page</property>
+                                    </object>
+                                    </child>
+                                    <child>
+                                    <object class="GtkButton" id="page_prev">
+                                    <property name="icon-name">go-previous-symbolic</property>
+                                    <property name="tooltip-text" translatable="no">Previous page</property>
+                                    </object>
+                                    </child>
+                                    <child>
+                                    <object class="GtkLabel" id="page_label">
+                                    <property name="valign">center</property>
+                                    </object>
+                                    </child>
+                                    <child>
+                                    <object class="GtkButton" id="page_next">
+                                    <property name="icon-name">go-next-symbolic</property>
+                                    <property name="tooltip-text" translatable="no">Next page</property>
+                                    </object>
+                                    </child>
+                                    <child>
+                                    <object class="GtkButton" id="page_last">
+                                    <property name="icon-name">go-last-symbolic</property>
+                                    <property name="tooltip-text" translatable="no">Last page</property>
+                                    </object>
+                                    </child>
+                                    </object>
+                                    </child>
                                     <child type="end">
-                                      <object class="GtkMenuButton">
-                                        <property name="icon-name">open-menu-symbolic</property>
-                                        <property name="menu-model">primary_menu</property>
-                                        <property name="tooltip-text" translatable="no">Main Menu</property>
-                                      </object>
+                                    <object class="GtkMenuButton">
+                                    <property name="icon-name">open-menu-symbolic</property>
+                                    <property name="menu-model">primary_menu</property>
+                                    <property name="tooltip-text" translatable="no">Main Menu</property>
+                                    </object>
                                     </child>
                                   </object>
                                 </child>

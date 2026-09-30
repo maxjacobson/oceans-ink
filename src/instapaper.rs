@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 const BASE_URL: &str = "https://www.instapaper.com/api/2";
-const BOOKMARKS_LIMIT: u32 = 100;
+pub const BOOKMARKS_LIMIT: u32 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
@@ -90,6 +90,15 @@ pub struct BookmarkPage {
     pub total: u64,
 }
 
+pub fn page_count(total: u64) -> u64 {
+    total.div_ceil(BOOKMARKS_LIMIT as u64).max(1)
+}
+
+pub fn offset_for_page(page: u64) -> u32 {
+    page.saturating_mul(BOOKMARKS_LIMIT as u64)
+        .min(u32::MAX as u64) as u32
+}
+
 #[derive(Debug, Deserialize)]
 struct ApiErrorBody {
     error: ApiErrorDetail,
@@ -137,7 +146,7 @@ impl Client {
         }
     }
 
-    pub fn bookmarks(&self, section: Section) -> Result<BookmarkPage, Error> {
+    pub fn bookmarks(&self, section: Section, offset: u32) -> Result<BookmarkPage, Error> {
         let url = format!("{BASE_URL}/bookmarks");
         let response = self
             .http
@@ -145,6 +154,7 @@ impl Client {
             .query(&[
                 ("section", section.query_value()),
                 ("limit", BOOKMARKS_LIMIT.to_string().as_str()),
+                ("offset", offset.to_string().as_str()),
             ])
             .bearer_auth(&self.token)
             .send()?;
@@ -383,5 +393,18 @@ mod tests {
         assert_eq!(Section::Home.query_value(), "home");
         assert_eq!(Section::Liked.query_value(), "liked");
         assert_eq!(Section::Archive.query_value(), "archive");
+    }
+
+    #[test]
+    fn page_math() {
+        assert_eq!(page_count(0), 1);
+        assert_eq!(page_count(1), 1);
+        assert_eq!(page_count(100), 1);
+        assert_eq!(page_count(101), 2);
+        assert_eq!(page_count(250), 3);
+
+        assert_eq!(offset_for_page(0), 0);
+        assert_eq!(offset_for_page(1), 100);
+        assert_eq!(offset_for_page(3), 300);
     }
 }
