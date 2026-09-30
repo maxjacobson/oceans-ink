@@ -25,7 +25,19 @@ Instapaper API v2 (beware: announced 2026-09-29, don't assume v1 API):
   gtk4 0.10 uses 0.21, so secret.rs uses its own gio/glib 0.22 deps
 - Flatpak cargo deps are vendored to gitignored build-aux/vendor; see
   README for the regenerate command
-- OAuth flow for other users: punted for now
+- Login flow: the token input screen is dev-mode only (MJ's personal
+  access token). For other users the API v2 spec defines an OAuth 2
+  authorization code flow: authorization URL
+  https://www.instapaper.com/oauth2/authorize, token URL
+  https://www.instapaper.com/oauth2/token, no scopes. Open questions to
+  investigate: whether Instapaper supports PKCE (desktop apps cannot
+  keep client secrets), what redirect URIs it allows (localhost loopback
+  vs custom URL scheme), and whether there is a developer registration
+  UI. Standard GNOME pattern when the time comes: register the app, open
+  the authorize URL in the system browser, catch the redirect either via
+  a temporary localhost listener or a custom scheme handler, exchange the
+  code at the token URL, then store the access token in the keyring
+  exactly as the dev token is stored today
 - In-app reader: clicking an article drills into a reader page (AdwNavigationView)
   with a WebKitGTK 6.0 WebView showing GET /bookmarks/{id}/parse body HTML, loaded
   against the article's original URL as base so relative images/links resolve.
@@ -92,6 +104,8 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
   and /bookmarks/{id}/tags; once in-app, reconsider "Open in browser"
   pointing at instapaper.com/read/{id} (currently intentional so MJ can
   manage tags/folders on the website)
+- Real login flow for other users: see the Login flow bullet under
+  Decisions; replaces the dev-mode token prompt
 - Request throttling/backoff: a burst of thumbnail + count requests once
   produced "error decoding response body" errors; possibly rate limiting.
   The decode-error diagnostics above will reveal the actual body if it
