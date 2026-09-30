@@ -17,7 +17,7 @@ jobs:
           gtk4-devel libadwaita-devel webkitgtk6.0-devel libsecret-devel
           gcc rust cargo clippy rustfmt just git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: Swatinem/rust-cache@v2
 
