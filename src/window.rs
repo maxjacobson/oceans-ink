@@ -844,7 +844,7 @@ impl Window {
             });
         *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
 
-        if is_youtube(bookmark.url.as_deref()) {
+        if is_video(bookmark.url.as_deref()) {
             reader.external_heading.set_text(&bookmark.display_title());
             reader.external_thumb.set_visible(false);
             reader.stack.set_visible_child_name("external");
@@ -1681,8 +1681,14 @@ fn load_reader_thumbnail_impl(window: &Window, reader: &ReaderWidgets, image_url
     }
 }
 
-fn is_youtube(url: Option<&str>) -> bool {
-    matches!(url, Some(u) if u.contains("youtube.com/") || u.contains("youtu.be/"))
+fn is_video(url: Option<&str>) -> bool {
+    matches!(
+        url,
+        Some(u)
+            if u.contains("youtube.com/")
+                || u.contains("youtu.be/")
+                || u.contains("vimeo.com/")
+    )
 }
 
 fn without_fragment(uri: &str) -> &str {
@@ -1703,7 +1709,18 @@ fn host_of(url: Option<&str>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_count;
+    use super::{format_count, is_video};
+
+    #[test]
+    fn recognizes_video_hosts() {
+        assert!(is_video(Some("https://www.youtube.com/watch?v=x")));
+        assert!(is_video(Some("https://youtu.be/x")));
+        assert!(is_video(Some("https://vimeo.com/123456")));
+        assert!(!is_video(Some(
+            "https://example.com/video-about-youtube.com"
+        )));
+        assert!(!is_video(Some("https://example.com/")));
+    }
 
     #[test]
     fn groups_thousands_with_commas() {
