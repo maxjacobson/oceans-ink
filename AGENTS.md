@@ -51,6 +51,11 @@ See README.md. Dev run: `OCEANS_INK_GRESOURCE=build/oceans-ink.gresource
 - `jj git push` only pushes bookmarks, so advance `main` to the newest
   described change before pushing (e.g. `jj bookmark set main -r @-` after
   running `jj new`).
+- Squashing into an already-pushed commit needs
+  `jj squash --ignore-immutable` (pushed history is immutable by default).
+  If a commit gets abandoned by mistake, `jj op log` shows the discarded
+  commit id and `jj squash --from <id> --into <target> --ignore-immutable`
+  brings the changes back.
 - Never commit credentials.
 
 ## Features
