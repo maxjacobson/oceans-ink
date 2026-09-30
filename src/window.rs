@@ -352,12 +352,22 @@ impl Window {
         let Some(url) = bookmark.url.clone() else {
             return;
         };
-        glib::spawn_future_local(async move {
-            let _ = gtk::gio::spawn_blocking(move || {
-                gtk::gio::AppInfo::launch_default_for_uri(&url, gtk::gio::AppLaunchContext::NONE)
-            })
-            .await;
-        });
+        let launcher = gtk::UriLauncher::new(&url);
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            async move {
+                if let Err(error) = launcher.launch_future(Some(&obj)).await {
+                    let dialog = adw::AlertDialog::builder()
+                        .heading("Could not open the article")
+                        .body(error.to_string())
+                        .build();
+                    dialog.add_response("ok", "OK");
+                    dialog.set_default_response(Some("ok"));
+                    dialog.present(Some(&obj));
+                }
+            }
+        ));
     }
 
     fn confirm_delete(&self, section_index: usize, row_index: usize, id: i64) {
