@@ -8,6 +8,7 @@ pub enum Section {
     Home,
     Liked,
     Archive,
+    Folder { id: i64 },
 }
 
 impl Section {
@@ -16,6 +17,14 @@ impl Section {
             Section::Home => "home",
             Section::Liked => "liked",
             Section::Archive => "archive",
+            Section::Folder { .. } => "folder",
+        }
+    }
+
+    pub fn folder_id(self) -> Option<i64> {
+        match self {
+            Section::Folder { id } => Some(id),
+            _ => None,
         }
     }
 }
@@ -82,6 +91,21 @@ pub struct ParsedArticle {
     pub metadata: ArticleMetadata,
     #[serde(default)]
     pub content: ArticleContent,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Folder {
+    pub id: i64,
+    pub title: String,
+    pub slug: String,
+    pub position: i64,
+    pub public: bool,
+    pub count: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct FolderList {
+    folders: Vec<Folder>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,14 +179,18 @@ impl Client {
 
     pub fn bookmarks(&self, section: Section, offset: u32) -> Result<BookmarkPage, Error> {
         let url = format!("{BASE_URL}/bookmarks");
+        let mut params = vec![
+            ("section", section.query_value().to_string()),
+            ("limit", BOOKMARKS_LIMIT.to_string()),
+            ("offset", offset.to_string()),
+        ];
+        if let Some(id) = section.folder_id() {
+            params.push(("folder_id", id.to_string()));
+        }
         let response = self
             .http
             .get(url)
-            .query(&[
-                ("section", section.query_value()),
-                ("limit", BOOKMARKS_LIMIT.to_string().as_str()),
-                ("offset", offset.to_string().as_str()),
-            ])
+            .query(&params)
             .bearer_auth(&self.token)
             .send()?;
         let list: BookmarkList = Self::decode_json(response)?;
@@ -179,12 +207,26 @@ impl Client {
         Ok(bytes.to_vec())
     }
 
+    pub fn folders(&self) -> Result<Vec<Folder>, Error> {
+        let url = format!("{BASE_URL}/folders");
+        let response = self.http.get(url).bearer_auth(&self.token).send()?;
+        let list: FolderList = Self::decode_json(response)?;
+        Ok(list.folders)
+    }
+
     pub fn count(&self, section: Section) -> Result<u64, Error> {
         let url = format!("{BASE_URL}/bookmarks");
+        let mut params = vec![
+            ("section", section.query_value().to_string()),
+            ("limit", "1".to_string()),
+        ];
+        if let Some(id) = section.folder_id() {
+            params.push(("folder_id", id.to_string()));
+        }
         let response = self
             .http
             .get(url)
-            .query(&[("section", section.query_value()), ("limit", "1")])
+            .query(&params)
             .bearer_auth(&self.token)
             .send()?;
         let list: BookmarkList = Self::decode_json(response)?;
@@ -440,6 +482,43 @@ mod tests {
         assert_eq!(Section::Home.query_value(), "home");
         assert_eq!(Section::Liked.query_value(), "liked");
         assert_eq!(Section::Archive.query_value(), "archive");
+        assert_eq!(Section::Folder { id: 7 }.query_value(), "folder");
+        assert_eq!(Section::Folder { id: 7 }.folder_id(), Some(7));
+        assert_eq!(Section::Home.folder_id(), None);
+    }
+
+    #[test]
+    fn parses_folder_list() {
+        let json = r#"{
+            "folders": [
+                {
+                    "id": 5424973,
+                    "title": "Music",
+                    "slug": "music",
+                    "position": 1792365241,
+                    "public": false,
+                    "count": 16
+                },
+                {
+                    "id": 5424975,
+                    "title": "Politics",
+                    "slug": "politics",
+                    "position": 1792365548,
+                    "public": true,
+                    "count": 0
+                }
+            ]
+        }"#;
+
+        let list: FolderList = serde_json::from_str(json).expect("should parse");
+        assert_eq!(list.folders.len(), 2);
+        let first = &list.folders[0];
+        assert_eq!(first.id, 5424973);
+        assert_eq!(first.title, "Music");
+        assert_eq!(first.slug, "music");
+        assert_eq!(first.count, 16);
+        assert!(!first.public);
+        assert!(list.folders[1].public);
     }
 
     #[test]

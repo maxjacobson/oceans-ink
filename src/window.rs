@@ -54,6 +54,8 @@ mod imp {
         pub webview: RefCell<Option<webkit6::WebView>>,
         pub webview_base_uri: RefCell<Option<String>>,
         pub(crate) sections: RefCell<Vec<super::SectionView>>,
+        pub(crate) folders: RefCell<Vec<crate::instapaper::Folder>>,
+        pub(crate) folder_counts: RefCell<Vec<gtk::Label>>,
         pub current_section: Cell<usize>,
         pub pending: Cell<Option<(usize, usize)>>,
         pub client: Arc<OnceLock<Arc<Client>>>,
@@ -86,6 +88,8 @@ mod imp {
                 webview: RefCell::new(None),
                 webview_base_uri: RefCell::new(None),
                 sections: RefCell::new(Vec::new()),
+                folders: RefCell::new(Vec::new()),
+                folder_counts: RefCell::new(Vec::new()),
                 current_section: Cell::new(0),
                 pending: Cell::new(None),
                 client: Arc::new(OnceLock::new()),
@@ -117,9 +121,9 @@ mod imp {
                 .into_iter()
                 .enumerate()
             {
-                let view = super::SectionView::new(index, obj.downgrade());
+                let view = super::SectionView::new(index, section, obj.downgrade());
                 self.lists_stack
-                    .add_named(view.stack(), Some(section.query_value()));
+                    .add_named(view.stack(), Some(view.stack_name().as_str()));
                 self.sections.borrow_mut().push(view);
             }
 
@@ -223,11 +227,12 @@ impl Window {
         glib::Object::builder().property("application", app).build()
     }
 
-    fn section_name(index: usize) -> &'static str {
+    fn section_name(&self, index: usize) -> String {
         match index {
-            0 => "Home",
-            1 => "Liked",
-            _ => "Archive",
+            0 => "Home".to_string(),
+            1 => "Liked".to_string(),
+            2 => "Archive".to_string(),
+            other => self.imp().folders.borrow()[other - 3].title.clone(),
         }
     }
 
@@ -243,6 +248,7 @@ impl Window {
         let _ = self.imp().client.set(Arc::new(Client::new(token)));
         self.imp().stack.set_visible_child_name("main");
         self.refresh_counts();
+        self.load_folders();
         if let Some(first) = self.imp().sections_list.row_at_index(0) {
             self.imp().sections_list.select_row(Some(&first));
         }
@@ -289,9 +295,9 @@ impl Window {
         if let Some(row) = imp.sections_list.row_at_index(index as i32) {
             imp.sections_list.select_row(Some(&row));
         }
-        imp.content_title.set_title(Self::section_name(index));
-        imp.lists_stack
-            .set_visible_child_name(section_from_index(index).query_value());
+        imp.content_title.set_title(&self.section_name(index));
+        let stack_name = imp.sections.borrow()[index].stack_name();
+        imp.lists_stack.set_visible_child_name(&stack_name);
         self.load_section(index);
         self.update_page_controls();
     }
@@ -299,6 +305,51 @@ impl Window {
     fn current_view(&self) -> SectionView {
         let imp = self.imp();
         imp.sections.borrow()[imp.current_section.get()].clone_view()
+    }
+
+    fn section_at(&self, index: usize) -> Section {
+        self.imp().sections.borrow()[index].section
+    }
+
+    fn load_folders(&self) {
+        let Some(client) = self.imp().client.get().cloned() else {
+            return;
+        };
+        let obj_weak = self.downgrade();
+        glib::spawn_future_local(async move {
+            let folders = gtk::gio::spawn_blocking(move || client.folders()).await;
+            if let Some(obj) = obj_weak.upgrade()
+                && let Ok(Ok(folders)) = folders
+            {
+                obj.apply_folders(folders);
+            }
+        });
+    }
+
+    fn apply_folders(&self, folders: Vec<crate::instapaper::Folder>) {
+        let imp = self.imp();
+        for folder in folders {
+            if let Some(position) = imp
+                .folders
+                .borrow()
+                .iter()
+                .position(|existing| existing.id == folder.id)
+            {
+                if let Some(label) = imp.folder_counts.borrow().get(position) {
+                    label.set_text(&format_count(folder.count));
+                }
+                continue;
+            }
+            let (row, count_label) = sidebar_folder_row(&folder.title);
+            imp.sections_list.append(&row);
+            let index = imp.sections.borrow().len();
+            let view = SectionView::new(index, Section::Folder { id: folder.id }, self.downgrade());
+            imp.lists_stack
+                .add_named(view.stack(), Some(view.stack_name().as_str()));
+            imp.folders.borrow_mut().push(folder);
+            imp.folder_counts.borrow_mut().push(count_label);
+            imp.sections.borrow_mut().push(view);
+        }
     }
 
     fn update_page_controls(&self) {
@@ -350,6 +401,7 @@ impl Window {
             return;
         };
         let view = imp.sections.borrow()[index].clone_view();
+        let section = self.section_at(index);
         let offset = crate::instapaper::offset_for_page(view.page());
         view.set_loading();
         let obj_weak = self.downgrade();
@@ -357,10 +409,8 @@ impl Window {
 
         let list_client = client.clone();
         glib::spawn_future_local(async move {
-            let result = gtk::gio::spawn_blocking(move || {
-                list_client.bookmarks(section_from_index(index), offset)
-            })
-            .await;
+            let result =
+                gtk::gio::spawn_blocking(move || list_client.bookmarks(section, offset)).await;
             if let Some(obj) = obj_weak.upgrade() {
                 match result {
                     Ok(Ok(page)) => {
@@ -384,15 +434,21 @@ impl Window {
     }
 
     fn set_count_label(&self, index: usize, count: u64) {
-        let label = match index {
-            0 => &self.imp().count_home,
-            1 => &self.imp().count_liked,
-            _ => &self.imp().count_archive,
-        };
-        label.set_text(&format_count(count));
+        let text = format_count(count);
+        match index {
+            0 => self.imp().count_home.set_text(&text),
+            1 => self.imp().count_liked.set_text(&text),
+            2 => self.imp().count_archive.set_text(&text),
+            other => {
+                if let Some(label) = self.imp().folder_counts.borrow().get(other - 3) {
+                    label.set_text(&text);
+                }
+            }
+        }
     }
 
     fn refresh_counts(&self) {
+        self.load_folders();
         let Some(client) = self.imp().client.get().cloned() else {
             return;
         };
@@ -895,7 +951,7 @@ impl Window {
                 bookmark.liked = liked;
             }
         }
-        if !liked && section_from_index(section_index) == Section::Liked {
+        if !liked && self.section_at(section_index) == Section::Liked {
             self.mutate(
                 section_index,
                 row_index,
@@ -944,7 +1000,7 @@ impl Window {
         } else {
             None
         };
-        if section_from_index(section_index) == Section::Archive {
+        if self.section_at(section_index) == Section::Archive {
             self.mutate(
                 section_index,
                 row_index,
@@ -1035,15 +1091,13 @@ impl Window {
             return;
         };
         let view = self.imp().sections.borrow()[section_index].clone_view();
+        let section = self.section_at(section_index);
         let obj_weak = self.downgrade();
         let thumbnails = self.imp().thumbnails.clone();
         let list_client = client.clone();
         glib::spawn_future_local(async move {
             let result = gtk::gio::spawn_blocking(move || {
-                list_client.bookmarks(
-                    section_from_index(section_index),
-                    crate::instapaper::offset_for_page(page),
-                )
+                list_client.bookmarks(section, crate::instapaper::offset_for_page(page))
             })
             .await;
             if let Some(obj) = obj_weak.upgrade() {
@@ -1097,20 +1151,17 @@ impl Window {
         } else {
             "Like (l)"
         }));
-        reader.archive_icon.set_icon_name(Some(
-            if section_from_index(section_index) == Section::Archive {
-                "edit-undo-symbolic"
-            } else {
-                "oceans-ink-archive-symbolic"
-            },
-        ));
-        reader.archive_button.set_tooltip_text(Some(
-            if section_from_index(section_index) == Section::Archive {
-                "Move to home (y)"
-            } else {
-                "Archive (y)"
-            },
-        ));
+        let in_archive = self.section_at(section_index) == Section::Archive;
+        reader.archive_icon.set_icon_name(Some(if in_archive {
+            "edit-undo-symbolic"
+        } else {
+            "oceans-ink-archive-symbolic"
+        }));
+        reader.archive_button.set_tooltip_text(Some(if in_archive {
+            "Move to home (y)"
+        } else {
+            "Archive (y)"
+        }));
         *imp.reader_current.borrow_mut() = Some((section_index, row_index, bookmark.clone()));
 
         if is_video(bookmark.url.as_deref()) {
@@ -1595,8 +1646,9 @@ impl Window {
         });
         items.append(&like_item);
 
+        let in_archive = self.section_at(section_index) == Section::Archive;
         let archive_item = add_item(
-            if section_from_index(section_index) == Section::Archive {
+            if in_archive {
                 "Move to home"
             } else {
                 "Archive"
@@ -1610,7 +1662,7 @@ impl Window {
                 p.popdown();
             }
             if let Some(obj) = archive_window.upgrade() {
-                obj.run_bookmark_action(if section_from_index(section_index) == Section::Archive {
+                obj.run_bookmark_action(if in_archive {
                     "unarchive-bookmark"
                 } else {
                     "archive-bookmark"
@@ -1661,14 +1713,6 @@ struct UndoSpec {
     call: UndoCall,
 }
 
-fn section_from_index(index: usize) -> Section {
-    match index {
-        0 => Section::Home,
-        1 => Section::Liked,
-        _ => Section::Archive,
-    }
-}
-
 fn advance_reader_after(section_index: usize, row_index: usize) -> AfterMutation {
     Box::new(move |window, success| {
         if success {
@@ -1713,7 +1757,7 @@ impl Clone for SectionView {
 }
 
 impl SectionView {
-    fn new(index: usize, window: glib::WeakRef<Window>) -> Self {
+    fn new(index: usize, section: Section, window: glib::WeakRef<Window>) -> Self {
         let list = gtk::ListBox::builder()
             .css_classes(["boxed-list"])
             .margin_top(12)
@@ -1798,7 +1842,7 @@ impl SectionView {
         list.add_controller(gesture);
 
         Self {
-            section: section_from_index(index),
+            section,
             stack,
             list,
             scroller: scrolled.clone(),
@@ -1814,6 +1858,13 @@ impl SectionView {
 
     fn stack(&self) -> &gtk::Stack {
         &self.stack
+    }
+
+    fn stack_name(&self) -> String {
+        match self.section {
+            Section::Folder { id } => format!("folder-{id}"),
+            other => other.query_value().to_string(),
+        }
     }
 
     fn save_anchor(&self) {
@@ -2104,6 +2155,31 @@ fn menu_item(label: &str, shortcut: Option<&str>) -> gtk::Button {
         .child(&box_)
         .css_classes(["flat"])
         .build()
+}
+
+fn sidebar_folder_row(title: &str) -> (gtk::ListBoxRow, gtk::Label) {
+    let count = gtk::Label::builder()
+        .halign(gtk::Align::End)
+        .css_classes(["dim-label"])
+        .build();
+    let title_label = gtk::Label::builder()
+        .label(title)
+        .halign(gtk::Align::Start)
+        .hexpand(true)
+        .build();
+    let icon = gtk::Image::builder().icon_name("folder-symbolic").build();
+    let box_ = gtk::Box::builder()
+        .spacing(8)
+        .margin_start(8)
+        .margin_end(8)
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+    box_.append(&icon);
+    box_.append(&title_label);
+    box_.append(&count);
+    let row = gtk::ListBoxRow::builder().child(&box_).build();
+    (row, count)
 }
 
 fn format_count(count: u64) -> String {
