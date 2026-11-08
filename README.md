@@ -46,8 +46,8 @@ Requires `org.gnome.Platform//50`, `org.gnome.Sdk//50`, and
 `flatpak install --user flathub <ref>`).
 
 The Flatpak build compiles Rust offline from `build-aux/vendor`
-(gitignored). Regenerate it with `cargo vendor build-aux/vendor > /dev/null`
-whenever `Cargo.toml` or `Cargo.lock` changes.
+(gitignored). `just install` re-vendors automatically whenever `Cargo.lock`
+is newer than the vendored copy (e.g. after pulling dependency updates).
 
 ## Layout
 
